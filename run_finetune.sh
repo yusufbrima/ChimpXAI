@@ -1,6 +1,7 @@
 #!/bin/bash
 
-PYTHON_SCRIPT="ft_full.py"
+
+PYTHON_SCRIPT="finetuning.py"
 
 # Define the parameter arrays
 modelstrs=("resnet18" "dense121")

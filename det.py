@@ -69,7 +69,7 @@ def main():
     methods = ['supcon', 'triplet']
     target_class = "chimpanzee_ir"
     model_type = "contrastive"
-    experiment = 1
+    experiment = 45
     females = ""
     history = {'method': [], "score": [], "threshold": []}
     

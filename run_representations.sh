@@ -15,9 +15,9 @@ for model in "${models[@]}"; do
             for method in "${methods[@]}"; do
                 # Set the experiment number based on both the model and method
                 if [ "$model" == "dense121" ] && [ "$model_type" == "classifier" ]; then
-                    experiment=7
+                    experiment=45
                 elif [ "$model" == "resnet18" ] && [ "$model_type" == "classifier" ]; then
-                    experiment=22
+                    experiment=44
                 else
                     experiment=1  # Default experiment number for all other cases
                 fi

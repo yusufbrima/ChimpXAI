@@ -86,7 +86,7 @@ To get the results for females, set the `females` variable; otherwise, leave it 
 ### Saliency Analysis of Trained Models
 Run the following command for saliency analysis:
 ```bash
-python saliency.py --ft True --target_class chimpanzee_ir --method supcon --experiment 1 --contrastive_method triplet
+python saliency.py --ft True --target_class chimpanzee_ir --experiment 1 --contrastive_method triplet
 ```
 
 #### CLI Arguments for `saliency.py`

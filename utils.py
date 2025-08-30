@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics.pairwise import cosine_similarity
 import torch.nn as nn
+from torcheval.metrics.functional import multiclass_f1_score
 from config import MODELS_PATH,FIG_PATH
 
 
@@ -77,6 +78,7 @@ class AudioDataProcessor:
                 break
         return samples
 
+
 def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,early_stopping, num_epochs=25, device="cpu", save_path='saved_model.pth'):
     """
     Train the model with the given data loaders, loss function, and optimizer.
@@ -95,15 +97,17 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,
 
     Returns:
         model (nn.Module): The trained model.
-        dict: Dictionary containing training and validation loss and accuracy history.
+        dict: Dictionary containing training and validation loss, accuracy, and f1-score history.
     """
-    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
+    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [], 'train_f1': [], 'val_f1': []}
     min_valid_loss = np.inf
 
     for epoch in range(num_epochs):
         print(f'Epoch {epoch+1}/{num_epochs}')
         train_loss = 0.0
         train_corrects = 0
+        train_preds = []
+        train_labels = []
         model.train()  # Set model to training mode
         
         for samples, labels in train_loader:
@@ -121,15 +125,22 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,
             loss.backward()
             optimizer.step()
             
+            # Collect predictions and labels for F1 score
+            train_preds.append(preds)
+            train_labels.append(labels)
+            
             # Calculate training loss and accuracy
             train_loss += loss.item() * data.size(0)
             train_corrects += torch.sum(preds == labels.data).item()
         
         train_loss /= len(train_loader.dataset)
         train_acc = train_corrects / len(train_loader.dataset)
+        train_f1 = multiclass_f1_score(torch.cat(train_preds), torch.cat(train_labels), num_classes=model.num_classes, average='weighted')
         
         valid_loss = 0.0
         valid_corrects = 0
+        val_preds = []
+        val_labels = []
         model.eval()  # Set model to evaluation mode
         
         with torch.no_grad():
@@ -141,15 +152,20 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,
                 _, preds = torch.max(outputs, 1)
                 loss = criterion(outputs, labels)
                 
+                # Collect predictions and labels for F1 score
+                val_preds.append(preds)
+                val_labels.append(labels)
+                
                 # Calculate validation loss and accuracy
                 valid_loss += loss.item() * data.size(0)
                 valid_corrects += torch.sum(preds == labels.data).item()
         
         valid_loss /= len(val_loader.dataset)
         valid_acc = valid_corrects / len(val_loader.dataset)
+        val_f1 = multiclass_f1_score(torch.cat(val_preds), torch.cat(val_labels), num_classes=model.num_classes, average='weighted')
         
-        print(f'Training Loss: {train_loss:.4f} Acc: {train_acc:.4f}')
-        print(f'Validation Loss: {valid_loss:.4f} Acc: {valid_acc:.4f}')
+        print(f'Training Loss: {train_loss:.4f} Acc: {train_acc:.4f} F1: {train_f1:.4f}')
+        print(f'Validation Loss: {valid_loss:.4f} Acc: {valid_acc:.4f} F1: {val_f1:.4f}')
         
         if valid_loss < min_valid_loss:
             print(f'Validation Loss Decreased ({min_valid_loss:.6f} --> {valid_loss:.6f}) \t Saving The Model')
@@ -158,17 +174,18 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,
         
         history['train_loss'].append(train_loss)
         history['train_acc'].append(train_acc)
+        history['train_f1'].append(train_f1.item())
         history['val_loss'].append(valid_loss)
         history['val_acc'].append(valid_acc)
-        
-        if early_stopping(valid_loss):
-            print(f"Early stopping at epoch {epoch+1}")
-            break
+        history['val_f1'].append(val_f1.item())
+        if early_stopping:
+            if early_stopping(valid_loss):
+                print(f"Early stopping at epoch {epoch+1}")
+                break
         # Step the scheduler
         scheduler.step()
 
     return model, history
-
 
 def test_model(model, test_loader, criterion, device="cpu"):
     test_loss = 0.0
@@ -178,8 +195,8 @@ def test_model(model, test_loader, criterion, device="cpu"):
     model.eval()  # Set model to evaluation mode
     
     with torch.no_grad():
-        for data, labels in test_loader:
-            data, labels = data['data'].to(device), labels.to(device)
+        for samples, labels in test_loader:
+            data, labels = samples['data'].to(device), labels.to(device)
             
             # Forward pass
             outputs = model(data)
@@ -191,15 +208,18 @@ def test_model(model, test_loader, criterion, device="cpu"):
             test_corrects += torch.sum(preds == labels.data).item()
             
             # Collect all labels and predictions
-            all_labels.extend(labels.cpu().numpy())
-            all_preds.extend(preds.cpu().numpy())
+            all_labels.append(labels)
+            all_preds.append(preds)
     
     test_loss /= len(test_loader.dataset)
     test_acc = test_corrects / len(test_loader.dataset)
+    test_f1 = multiclass_f1_score(torch.cat(all_preds), torch.cat(all_labels), num_classes=model.num_classes, average='weighted')
     
-    print(f'Test Loss: {test_loss:.4f} Acc: {test_acc:.4f}')
+    print(f'Test Loss: {test_loss:.4f} Acc: {test_acc:.4f} F1: {test_f1:.4f}')
     
-    return test_loss, test_acc, all_labels, all_preds
+    return test_loss, test_acc, test_f1.item(), torch.cat(all_labels).cpu().numpy(), torch.cat(all_preds).cpu().numpy()
+
+
 
 def plot_confusion_matrix(true_labels, pred_labels, class_names, modelstr="resnet18"):
     cm = confusion_matrix(true_labels, pred_labels)

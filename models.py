@@ -5,6 +5,71 @@ import torch.nn.functional as F
 import torchaudio
 from config import LATENT_DIM
 
+class SmallCNNModel(nn.Module):
+    def __init__(self, num_classes, modelstr='smallcnn', input_height=257, input_width=345):
+        """
+        A lightweight CNN designed for small datasets
+        
+        Parameters:
+            num_classes (int): Number of output classes
+            modelsrt (str): The type of model to use ('smallcnn')
+        """
+        super(SmallCNNModel, self).__init__()
+        
+        self.num_classes = num_classes
+        
+        # First convolutional block
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        
+        # Second convolutional block
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        
+        # Third convolutional block
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        
+        # Pooling layers
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        # Dropout for regularization
+        self.dropout = nn.Dropout(0.25)
+        
+        # Fully connected layers
+        # This will need to be adjusted based on your input spectrogram size
+        self.fc1 = nn.Linear(128 * (input_height//8) * (input_width//8), 256)
+        self.fc2 = nn.Linear(256, num_classes)
+
+    def forward(self, x):
+        """
+        Forward pass of the network
+        
+        Parameters:
+            x (torch.Tensor): Input tensor (batch_size, 1, height, width)
+        
+        Returns:
+            torch.Tensor: Output logits
+        """
+        # print("Shape of input tensor:", x.shape)
+        # First conv block
+        x = self.pool(F.relu(self.bn1(self.conv1(x))))
+        
+        # Second conv block
+        x = self.pool(F.relu(self.bn2(self.conv2(x))))
+        
+        # Third conv block
+        x = self.pool(F.relu(self.bn3(self.conv3(x))))
+        
+        # Flatten
+        x = x.view(x.size(0), -1)
+        
+        # Fully connected layers with dropout
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        
+        return x
+
 class CustomCNNModel(nn.Module):
     """
     A customized CNN model that accepts a single input channel and outputs a specified number of classes.
@@ -22,6 +87,8 @@ class CustomCNNModel(nn.Module):
             weights (str, optional): The type of pre-trained weights to use (e.g., 'IMAGENET1K_V1').
         """
         super(CustomCNNModel, self).__init__()
+
+        self.num_classes = num_classes
         
         # Load the ResNet-18 model, optionally with pre-trained weights
         if modelstr == 'resnet18':
@@ -45,11 +112,12 @@ class CustomCNNModel(nn.Module):
                                           bias=False)
             # Modify the final fully connected layer to output the specified number of classes
             self.base_model.classifier = nn.Linear(self.base_model.classifier.in_features, num_classes)
+        elif modelstr == 'smallcnn':
+            self.base_model = SmallCNNModel(num_classes=num_classes, modelstr=modelstr)
         else:
             self.base_model = models.efficientnet_b0(weights=weights)
             self.base_model.features[0][0]  = torch.nn.Conv2d(1, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
-            self.base_model.classifier = torch.nn.Linear(in_features=1280, out_features=num_classes, bias=True)
-    
+            self.base_model.classifier = torch.nn.Linear(in_features=1280, out_features=num_classes, bias=True)    
 
     def forward(self, x):
         """
@@ -156,6 +224,7 @@ class FinetuningClassifier(nn.Module):
         
         self.feature_extractor = contrastive_model
         self.requires_grad =  requires_grad
+        self.num_classes =  num_classes
         
         # Freeze all parameters of the feature extractor
         for param in self.feature_extractor.parameters():

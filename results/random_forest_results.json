@@ -1,0 +1,24 @@
+{
+    "model_name": "RandomForestClassifier",
+    "best_hyperparameters": {
+        "max_depth": null,
+        "min_samples_leaf": 1,
+        "min_samples_split": 5,
+        "n_estimators": 50
+    },
+    "accuracy": 0.6204301075268818,
+    "f1_score": 0.625953325310596,
+    "classes": [
+        "ARN",
+        "CHE",
+        "CHI",
+        "FRE",
+        "GUM",
+        "LIT",
+        "LOU",
+        "NGO",
+        "ORI",
+        "PAN",
+        "THE"
+    ]
+}

@@ -1,17 +1,17 @@
 FIG_PATH = "./graphics"
-MODELS_PATH = "./models"
+# MODELS_PATH = "./models"
 RESULTS_PATH = "./results"
 DATA_PATH = "/net/projects/data/Chimpanzee/UOS-Yusuf/Full_Data/good"
 
 FEMALE_DATA_PATH = "/net/projects/data/Chimpanzee/UOS-Yusuf/Full_Data/FEMALES"
 
-HUMAN_DATA_PATH = "/net/projects/scratch/summer/valid_until_31_January_2025/ybrima/datasets/LibriSpeechSmaller"
+HUMAN_DATA_PATH = "/net/projects/scratch/winter/valid_until_31_July_2025/ybrima/datasets/LibriSpeechSmaller"
 
-MODELS_PATH = "/net/projects/scratch/summer/valid_until_31_January_2025/ybrima/Models/ChimpSSL"
+MODELS_PATH = "/net/projects/scratch/winter/valid_until_31_July_2025/ybrima/Models/ChimpSSL"
 
-EXPORT_DATA_PATH = "/net/projects/scratch/summer/valid_until_31_January_2025/ybrima/ChimpSSLResults"
+EXPORT_DATA_PATH = "/net/projects/scratch/winter/valid_until_31_July_2025/ybrima/ChimpSSLResults"
 
-CHIMPANZEE_DATA_PATH = "/net/projects/scratch/summer/valid_until_31_January_2025/ybrima/datasets/Chimpanzee"
+CHIMPANZEE_DATA_PATH = "/net/projects/scratch/winter/valid_until_31_July_2025/ybrima/datasets/Chimpanzee"
 
 #hyperparameters
 SEED = 42
@@ -25,6 +25,7 @@ FT_EPOCHS = 20
 NUM_EXPERIMENTS = 50
 MODELSTRS = ['resnet18', 'dense121']
 FONTSIZE = 14
+
 
 SAMPLING_RATE = 44100
 

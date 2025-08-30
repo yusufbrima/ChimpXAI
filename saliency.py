@@ -53,21 +53,21 @@ def main(experiment, target_class, ft,contrastive_method, duration):
         # dense_model = CustomCNNModel(num_classes=11, weights=None, modelstr='dense121')
         model = ContrastiveCNN(latent_dim=LATENT_DIM, weights=None,  modelstr='dense121')
         dense_model = FinetuningClassifier(model, num_classes=11).to(device)
-        dense_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_ft_dense121_{target_class}_{contrastive_method}_experiment_{experiment}.pth', map_location=device))
+        dense_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_ft_full_dense121_{target_class}_{contrastive_method}_experiment_{experiment}.pth', map_location=device))
         
         model = ContrastiveCNN(latent_dim=LATENT_DIM, weights=None,  modelstr='resnet18')
         resnet_model = FinetuningClassifier(model, num_classes=11).to(device)
-        resnet_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_ft_resnet18_{target_class}_{contrastive_method}_experiment_{experiment}.pth', map_location=device))
+        resnet_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_ft_full_resnet18_{target_class}_{contrastive_method}_experiment_{experiment}.pth', map_location=device))
         save_prefix = f'ft_{contrastive_method}_'
     else:
-        dense_max = 34
-        resnet_max = 12
+        dense_max = 45
+        resnet_max = 44
         dense_model = CustomCNNModel(num_classes=11, weights=None, modelstr='dense121')
         dense_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_dense121_{target_class}_experiment_{dense_max}.pth', map_location=device))
 
         resnet_model = CustomCNNModel(num_classes=11, weights=None, modelstr='resnet18')
         resnet_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_resnet18_{target_class}_experiment_{resnet_max}.pth', map_location=device))
-        save_prefix = ''
+        save_prefix = 'standard'
 
     dense_model.to(device)
     dense_model.eval()
@@ -165,7 +165,8 @@ def main(experiment, target_class, ft,contrastive_method, duration):
             sentinel += 1
         plt.subplots_adjust(wspace=0.4, hspace=0.6)  # Adjust these values as needed
         plt.tight_layout()
-        fig.savefig(f'{FIG_PATH}/librosa_{save_prefix}{method}.png', dpi=300, bbox_inches='tight')
+        save_name_prefix = f'{save_prefix}_experiment_{experiment}_scorecam'
+        fig.savefig(f'{FIG_PATH}/{save_name_prefix}.png', dpi=300, bbox_inches='tight')
         plt.show()
 
 if __name__ == "__main__":

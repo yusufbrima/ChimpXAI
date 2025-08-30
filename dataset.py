@@ -1,4 +1,5 @@
 import os
+from typing import Optional, Tuple, Dict, List
 import random
 import math
 import torchaudio
@@ -6,25 +7,144 @@ import torch
 from torch.utils.data import Dataset
 import torchaudio.transforms as transforms
 import torchaudio.transforms as T
+from torch import Tensor
+from torch.nn import functional as F
+import numpy as np
 from config import SAMPLING_RATE
+    
 
+class Noise(torch.nn.Module):
+    def __init__(self, min_snr=0.0001, max_snr=0.01):
+        """
+        :param min_snr: Minimum signal-to-noise ratio
+        :param max_snr: Maximum signal-to-noise ratio
+        source: https://github.com/Spijkervet/torchaudio-augmentations/blob/master/torchaudio_augmentations/augmentations/noise.py
+        """
+        super().__init__()
+        self.min_snr = min_snr
+        self.max_snr = max_snr
+
+    def forward(self, audio):
+        std = torch.std(audio)
+        noise_std = random.uniform(self.min_snr * std, self.max_snr * std)
+
+        noise = np.random.normal(0.0, noise_std, size=audio.shape).astype(np.float32)
+
+        return audio + noise
 
 
 class AugmentAudio:
-    def __init__(self):
+    """
+    Applies a set of random audio augmentations to a waveform.
+    Includes volume adjustment, frequency masking, and time masking.
+    """
+
+    def __init__(self) -> None:
         self.transforms = [
-            T.Vol(gain=0.9),
-            T.TimeStretch(fixed_rate=0.8),
-            T.FrequencyMasking(freq_mask_param=15),
-            T.TimeMasking(time_mask_param=35)
+            T.Vol(gain=0.9),  # Reduce volume by 10%
+            T.FrequencyMasking(freq_mask_param=15),  # Mask random frequencies
+            T.TimeMasking(time_mask_param=35)  # Mask random time intervals
         ]
 
-    def __call__(self, audio):
-        if random.random() > 0.5:
-            for transform in self.transforms:
+    def __call__(self, audio: Tensor) -> Tensor:
+        for transform in self.transforms:
+            if random.random() > 0.5:
                 audio = transform(audio)
         return audio
 
+class Augmentation:
+    """
+    Applies a set of random audio augmentations to a waveform.
+    Includes volume adjustment, frequency masking, and time masking.
+    """
+
+    def __init__(self) -> None:
+        self.transforms = [
+            T.Vol(gain=0.9),  # Reduce volume by 10%
+            Noise(),  # Add noise
+        ]
+
+    def __call__(self, audio: Tensor) -> Tensor:
+        for transform in self.transforms:
+            if random.random() > 0.5:
+                audio = transform(audio)
+        return audio
+    
+
+# class Augmentation:
+#     """
+#     Audio augmentation class applying only:
+#       1. Volume perturbation (torchaudio.transforms.Vol)
+#       2. Additive noise (torchaudio.transforms.AddNoise)
+
+#     Each transform is applied independently with a given probability.
+#     """
+
+#     def __init__(
+#         self,
+#         sample_rate: int = SAMPLING_RATE,
+#         vol_gain_db_range: Tuple[float, float] = (-10.0, 10.0),
+#         snr_db_range: Tuple[float, float] = (10.0, 30.0),
+#         p_vol: float = 0.5,
+#         p_noise: float = 0.5,
+#     ) -> None:
+#         """
+#         Args:
+#             sample_rate (int): Sampling rate of the audio.
+#             vol_gain_db_range (Tuple[float, float]): Min and max dB for volume gain.
+#             snr_db_range (Tuple[float, float]): Min and max SNR (in dB) for AddNoise.
+#             p_vol (float): Probability to apply volume perturbation.
+#             p_noise (float): Probability to apply additive noise.
+#         """
+#         self.sample_rate = sample_rate
+#         self.vol_gain_db_range = vol_gain_db_range
+#         self.snr_db_range = snr_db_range
+#         self.p_vol = p_vol
+#         self.p_noise = p_noise
+
+#     def _apply_vol(self, waveform: torch.Tensor) -> torch.Tensor:
+#         """
+#         Apply random volume gain.
+
+#         Args:
+#             waveform (torch.Tensor): Audio tensor of shape (channels, time).
+
+#         Returns:
+#             torch.Tensor: Volume-perturbed waveform.
+#         """
+#         gain_db = random.uniform(*self.vol_gain_db_range)
+#         vol_transform = T.Vol(gain=gain_db, gain_type='db')
+#         return vol_transform(waveform)
+
+#     def _apply_noise(self, waveform: torch.Tensor) -> torch.Tensor:
+#         """
+#         Add noise at a random SNR.
+
+#         Args:
+#             waveform (torch.Tensor): Audio tensor of shape (channels, time).
+
+#         Returns:
+#             torch.Tensor: Noisy waveform.
+#         """
+#         snr_db = random.uniform(*self.snr_db_range)
+#         noise_transform = T.AddNoise(snr=snr_db)
+#         return noise_transform(waveform)
+
+#     def __call__(self, waveform: torch.Tensor) -> torch.Tensor:
+#         """
+#         Apply volume perturbation and/or additive noise.
+
+#         Args:
+#             waveform (torch.Tensor): Audio tensor of shape (channels, time).
+
+#         Returns:
+#             torch.Tensor: Augmented waveform.
+#         """
+#         if random.random() > self.p_vol:
+#             waveform = self._apply_vol(waveform)
+#         if random.random() > self.p_noise:
+#             waveform = self._apply_noise(waveform)
+#         return waveform
 
 
 class AudioDataset(Dataset):
@@ -342,7 +462,168 @@ class SpectrogramDataset(MAudioDataset):
 
         return sample, label_idx
 
+class AugAudioDataset(Dataset):
+    """
+    A PyTorch Dataset for loading and segmenting audio files from a directory structure
+    where each subdirectory represents a class.
 
-    
+    Args:
+        root_dir (str): Root directory containing class-named subdirectories with audio files.
+        duration (float): Duration (in seconds) for each audio segment.
+        target_sample_rate (int): Desired sample rate for all audio.
+        transform (callable, optional): Optional waveform transform (e.g., augmentations).
+    """
+
+    def __init__(
+        self,
+        root_dir: str,
+        duration: float = 5.0,
+        target_sample_rate: int = SAMPLING_RATE,
+        transform: Optional[callable] = None
+    ) -> None:
+        self.root_dir = root_dir
+        self.duration = duration
+        self.target_sample_rate = target_sample_rate
+        self.transform = transform
+
+        # Collect classes and map to integer labels
+        self.classes = sorted([
+            d for d in os.listdir(root_dir)
+            if os.path.isdir(os.path.join(root_dir, d))
+        ])
+        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
+
+        # Generate list of (file_path, label_idx, start_time)
+        self.file_list: List[Tuple[str, int, float]] = []
+        self.file_sample_rates: List[int] = []
+
+        for class_name in self.classes:
+            class_path = os.path.join(root_dir, class_name)
+            for filename in os.listdir(class_path):
+                if filename.endswith(('.wav', '.mp3', '.flac')):
+                    file_path = os.path.join(class_path, filename)
+                    self._add_file_segments(file_path, self.class_to_idx[class_name])
+
+        if not self.file_list:
+            raise ValueError("No audio files found in the specified directory.")
+
+    def _add_file_segments(self, file_path: str, class_idx: int) -> None:
+        """
+        Splits a long audio file into fixed-duration segments and adds them to the dataset.
+
+        Args:
+            file_path (str): Path to the audio file.
+            class_idx (int): Integer label of the class.
+        """
+        audio_metadata = torchaudio.info(file_path)
+        audio_length = audio_metadata.num_frames / audio_metadata.sample_rate
+        num_segments = math.ceil(audio_length / self.duration)
+
+        for i in range(num_segments):
+            start_time = i * self.duration
+            self.file_list.append((file_path, class_idx, start_time))
+            self.file_sample_rates.append(audio_metadata.sample_rate)
+
+    def __len__(self) -> int:
+        return len(self.file_list)
+
+    def __getitem__(self, idx: int) -> Tuple[Dict[str, Tensor], int]:
+        """
+        Loads and returns an audio waveform segment and its label.
+
+        Returns:
+            Dict with waveform and sample rate, and the integer label.
+        """
+        audio_path, label_idx, start_time = self.file_list[idx]
+        sr = self.file_sample_rates[idx]
+
+        # Load a segment of the audio file
+        waveform, sample_rate = torchaudio.load(
+            audio_path,
+            frame_offset=int(start_time * sr),
+            num_frames=int(self.duration * sr)
+        )
+
+        # Resample if needed
+        if sample_rate != self.target_sample_rate:
+            resampler = T.Resample(orig_freq=sample_rate, new_freq=self.target_sample_rate)
+            waveform = resampler(waveform)
+
+        # Pad or truncate to match the desired length
+        samples_to_extract = int(self.duration * self.target_sample_rate)
+        if waveform.size(1) < samples_to_extract:
+            pad_length = samples_to_extract - waveform.size(1)
+            waveform = torch.nn.functional.pad(waveform, (0, pad_length), mode='constant', value=0)
+        elif waveform.size(1) > samples_to_extract:
+            waveform = waveform[:, :samples_to_extract]
+
+        # Apply optional waveform transformation (augmentation)
+        if self.transform:
+            waveform = self.transform(waveform)
+
+        return {'data': waveform, 'sample_rate': self.target_sample_rate}, label_idx
+
+
+class AugSpectrogramDataset(AugAudioDataset):
+    """
+    Dataset subclass that returns log-scaled spectrograms instead of raw waveforms.
+
+    Args:
+        n_fft (int): FFT window size.
+        hop_length (int): Hop length for STFT.
+        power (float): Power of the spectrogram (e.g., 2 for power, 1 for magnitude).
+        normalize (bool): Whether to normalize the spectrogram.
+    """
+
+    def __init__(
+        self,
+        root_dir: str,
+        duration: float = 5.0,
+        target_sample_rate: int = SAMPLING_RATE,
+        n_fft: int = 512,
+        hop_length: int = 256,
+        power: float = 2.0,
+        normalize: bool = True,
+        transform: Optional[callable] = None
+    ) -> None:
+        super().__init__(root_dir, duration, target_sample_rate, transform)
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.power = power
+        self.normalize = normalize
+
+        self.spectrogram = T.Spectrogram(n_fft=self.n_fft, hop_length=self.hop_length, power=self.power)
+        self.db_transform = T.AmplitudeToDB()
+
+    def __getitem__(self, idx: int) -> Tuple[Dict[str, Tensor], int]:
+        """
+        Returns:
+            Dict with 'data' (log-scaled spectrogram), 'waveform', and 'sample_rate',
+            and the label index.
+        """
+        sample, label_idx = super().__getitem__(idx)
+        waveform = sample['data']
+
+        # Convert to mono if stereo
+        if waveform.size(0) > 1:
+            waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+        # Convert waveform to log-spectrogram
+        spectrogram = self.spectrogram(waveform)
+        log_spectrogram = self.db_transform(spectrogram)
+
+        # Normalize spectrogram
+        if self.normalize:
+            log_spectrogram = (log_spectrogram - log_spectrogram.mean()) / (log_spectrogram.std() + 1e-5)
+
+        return {
+            'data': log_spectrogram,
+            'waveform': waveform,
+            'sample_rate': self.target_sample_rate
+        }, label_idx
+
+
+
+
 if __name__ == "__main__":
     pass

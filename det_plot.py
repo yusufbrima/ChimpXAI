@@ -148,7 +148,8 @@ if __name__ == "__main__":
     df = pd.DataFrame(history)
     # Save the DataFrame
     if females:
-        df.to_csv(f'{RESULTS_PATH}/eer_scores_contrastive_experiment_{experiment}_{females}.csv', index=False)
+        df.to_csv(f'{RESULTS_PATH}/eer_scores_contrastive_experiment_{experiment}{females}.csv', index=False)
+        print(f"Results saved to {RESULTS_PATH}/eer_scores_contrastive_experiment_{experiment}{females}.csv")
     else:
         df.to_csv(f'{RESULTS_PATH}/eer_scores_contrastive_experiment_{experiment}.csv', index=False)
 

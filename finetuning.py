@@ -10,7 +10,7 @@ import torch.optim as optim
 import torchvision.models as models
 import numpy as np
 from torch.utils.data import DataLoader, random_split
-from dataset import MAudioDataset, SpectrogramDataset
+from dataset import MAudioDataset, SpectrogramDataset,AugSpectrogramDataset,AugmentAudio,Augmentation
 from models import ContrastiveCNN, FinetuningClassifier
 from config import DATA_PATH, BATCH_SIZE, LEARNING_RATE, SEED, MODELS_PATH, RESULTS_PATH, NUM_EXPERIMENTS, MODELSTRS, SAMPLING_RATE, LATENT_DIM, FT_EPOCHS, CHIMPANZEE_DATA_PATH,CLASSIFIER_BATCH_SIZE,CLASS_WEIGHTS
 from utils import train_model, test_model, EarlyStopping, plot_confusion_matrix
@@ -31,9 +31,13 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 @click.option('--contrastive_method', default='triplet', help='Contrastive method to use for the model.')
 def main(modelstr, experiment, target_class, model_type, contrastive_method):
     # Load the dataset
-    train_ds = SpectrogramDataset(f"{CHIMPANZEE_DATA_PATH}/train", duration=2, target_sample_rate=SAMPLING_RATE)
+    # train_ds = SpectrogramDataset(f"{CHIMPANZEE_DATA_PATH}/train", duration=2, target_sample_rate=SAMPLING_RATE)
 
-    test_dataset = SpectrogramDataset(f"{CHIMPANZEE_DATA_PATH}/val", duration=2, target_sample_rate=SAMPLING_RATE)
+    augment = Augmentation()
+    train_ds = AugSpectrogramDataset(f"{CHIMPANZEE_DATA_PATH}/train", duration=2, target_sample_rate=SAMPLING_RATE, transform=augment)
+    test_dataset = AugSpectrogramDataset(f"{CHIMPANZEE_DATA_PATH}/val", duration=2, target_sample_rate=SAMPLING_RATE)
+
+    # test_dataset = SpectrogramDataset(f"{CHIMPANZEE_DATA_PATH}/val", duration=2, target_sample_rate=SAMPLING_RATE)
 
     # Define the sizes of the splits
     train_size = int(0.8 * len(train_ds))
@@ -82,7 +86,8 @@ def main(modelstr, experiment, target_class, model_type, contrastive_method):
     print(history)
 
     # Example usage:
-    test_loss, test_acc, all_labels, all_preds = test_model(model, test_loader, criterion, device=device)
+    # test_loss, test_acc, all_labels, all_preds = test_model(model, test_loader, criterion, device=device)
+    test_loss, test_acc, test_f1, all_labels, all_preds = test_model(model, test_loader, criterion, device=device)
 
     # Save the test labels and predictions
     test_results = {'labels': all_labels, 'preds': all_preds}
@@ -94,7 +99,7 @@ def main(modelstr, experiment, target_class, model_type, contrastive_method):
     history_df.to_csv(f'{RESULTS_PATH}/{modelstr}_ft_full_history_{target_class}_{contrastive_method}_experiment_{experiment}.csv', index=False)
 
     # Save the test results
-    test_results = {'test_loss': test_loss, 'test_acc': test_acc}
+    test_results = {'test_loss': test_loss, 'test_acc': test_acc, 'test_f1': test_f1}
     test_results_df = pd.DataFrame(test_results, index=[0])
     test_results_df.to_csv(f'{RESULTS_PATH}/{modelstr}_ft_full_test_results_{target_class}_{contrastive_method}_experiment_{experiment}.csv', index=False)
     print(f'Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}')

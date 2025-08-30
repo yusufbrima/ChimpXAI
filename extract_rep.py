@@ -60,7 +60,7 @@ def main(modelstr, experiment, target_class, model_type, method):
     elif model_type == "contrastive":
         print("Loading contrastive model...")
         features_model = ContrastiveCNN(latent_dim=LATENT_DIM, weights=None, modelstr=modelstr)
-        print("We are here...")
+        # print("We are here...")
         # features_model.load_state_dict(torch.load(f'{MODELS_PATH}/{model_type}_trained_model_{modelstr}_experiment_{experiment}.pt', map_location=device))
         if target_class == 'chimpanzee_ir' or target_class == 'human_ir':
             features_model.load_state_dict(torch.load(f'{MODELS_PATH}/contrastive_trained_model_{modelstr}_{target_class}_{method}_experiment_{experiment}.pt', map_location=device))

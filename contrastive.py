@@ -105,6 +105,10 @@ def main(experiment, target_class, modelstr, contrastive_method):
 
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
 
+    inputs, labels = next(iter(dataloader))
+    print("Inputs shape", inputs['data'].shape)
+    print("Labels shape", labels.shape)
+
     # Initialize the model
     model = ContrastiveCNN(latent_dim=LATENT_DIM, weights=None, modelstr=modelstr).to(device)
 
