@@ -9,9 +9,50 @@ import torchaudio.transforms as transforms
 import torchaudio.transforms as T
 from torch import Tensor
 from torch.nn import functional as F
+import librosa 
 import numpy as np
 from config import SAMPLING_RATE
-    
+from audiomentations import Compose, AddGaussianNoise, TimeStretch, PitchShift, Shift
+from torch import Tensor
+import random
+
+class Augmentation:
+    """
+    Applies a set of random audio augmentations to a waveform.
+    Uses audiomentations for realistic audio transformations.
+    Accepts tunable parameters for hyperparameter search.
+    """
+
+    def __init__(
+        self,
+        sample_rate: int = 41000,
+        time_stretch: tuple[float, float, float] = (0.9, 1.1, 0.3),  # min_rate, max_rate, p
+        pitch_shift: tuple[int, int, float] = (-2, 2, 0.3),          # min_semitones, max_semitones, p
+        shift_p: float = 0.3                                        # probability
+    ) -> None:
+        self.sample_rate = sample_rate
+        min_rate, max_rate, ts_p = time_stretch
+        min_semitones, max_semitones, ps_p = pitch_shift
+
+        self.augmenter = Compose([
+            AddGaussianNoise(min_amplitude=0.001, max_amplitude=0.015, p=0.5),
+            TimeStretch(min_rate=min_rate, max_rate=max_rate, p=ts_p),
+            PitchShift(min_semitones=min_semitones, max_semitones=max_semitones, p=ps_p),
+            Shift(p=shift_p),
+        ])
+
+    def __call__(self, audio: Tensor) -> Tensor:
+        """
+        Args:
+            audio (Tensor): waveform of shape (1, n_samples)
+        
+        Returns:
+            Tensor: augmented waveform
+        """
+        audio_np = audio.squeeze(0).numpy()
+        # Always apply the augmentations
+        audio_np = self.augmenter(samples=audio_np, sample_rate=self.sample_rate)
+        return torch.tensor(audio_np, dtype=audio.dtype).unsqueeze(0)
 
 class Noise(torch.nn.Module):
     def __init__(self, min_snr=0.0001, max_snr=0.01):
@@ -51,100 +92,6 @@ class AugmentAudio:
             if random.random() > 0.5:
                 audio = transform(audio)
         return audio
-
-class Augmentation:
-    """
-    Applies a set of random audio augmentations to a waveform.
-    Includes volume adjustment, frequency masking, and time masking.
-    """
-
-    def __init__(self) -> None:
-        self.transforms = [
-            T.Vol(gain=0.9),  # Reduce volume by 10%
-            Noise(),  # Add noise
-        ]
-
-    def __call__(self, audio: Tensor) -> Tensor:
-        for transform in self.transforms:
-            if random.random() > 0.5:
-                audio = transform(audio)
-        return audio
-    
-
-# class Augmentation:
-#     """
-#     Audio augmentation class applying only:
-#       1. Volume perturbation (torchaudio.transforms.Vol)
-#       2. Additive noise (torchaudio.transforms.AddNoise)
-
-#     Each transform is applied independently with a given probability.
-#     """
-
-#     def __init__(
-#         self,
-#         sample_rate: int = SAMPLING_RATE,
-#         vol_gain_db_range: Tuple[float, float] = (-10.0, 10.0),
-#         snr_db_range: Tuple[float, float] = (10.0, 30.0),
-#         p_vol: float = 0.5,
-#         p_noise: float = 0.5,
-#     ) -> None:
-#         """
-#         Args:
-#             sample_rate (int): Sampling rate of the audio.
-#             vol_gain_db_range (Tuple[float, float]): Min and max dB for volume gain.
-#             snr_db_range (Tuple[float, float]): Min and max SNR (in dB) for AddNoise.
-#             p_vol (float): Probability to apply volume perturbation.
-#             p_noise (float): Probability to apply additive noise.
-#         """
-#         self.sample_rate = sample_rate
-#         self.vol_gain_db_range = vol_gain_db_range
-#         self.snr_db_range = snr_db_range
-#         self.p_vol = p_vol
-#         self.p_noise = p_noise
-
-#     def _apply_vol(self, waveform: torch.Tensor) -> torch.Tensor:
-#         """
-#         Apply random volume gain.
-
-#         Args:
-#             waveform (torch.Tensor): Audio tensor of shape (channels, time).
-
-#         Returns:
-#             torch.Tensor: Volume-perturbed waveform.
-#         """
-#         gain_db = random.uniform(*self.vol_gain_db_range)
-#         vol_transform = T.Vol(gain=gain_db, gain_type='db')
-#         return vol_transform(waveform)
-
-#     def _apply_noise(self, waveform: torch.Tensor) -> torch.Tensor:
-#         """
-#         Add noise at a random SNR.
-
-#         Args:
-#             waveform (torch.Tensor): Audio tensor of shape (channels, time).
-
-#         Returns:
-#             torch.Tensor: Noisy waveform.
-#         """
-#         snr_db = random.uniform(*self.snr_db_range)
-#         noise_transform = T.AddNoise(snr=snr_db)
-#         return noise_transform(waveform)
-
-#     def __call__(self, waveform: torch.Tensor) -> torch.Tensor:
-#         """
-#         Apply volume perturbation and/or additive noise.
-
-#         Args:
-#             waveform (torch.Tensor): Audio tensor of shape (channels, time).
-
-#         Returns:
-#             torch.Tensor: Augmented waveform.
-#         """
-#         if random.random() > self.p_vol:
-#             waveform = self._apply_vol(waveform)
-#         if random.random() > self.p_noise:
-#             waveform = self._apply_noise(waveform)
-#         return waveform
 
 
 class AudioDataset(Dataset):
@@ -290,23 +237,42 @@ class MAudioDataset(Dataset):
         
         if not self.file_list:
             raise ValueError("No audio files found in the specified directory.")
-
+    
     def _add_file_segments(self, file_path, class_idx):
         """
         Add file segments to the file_list based on audio duration.
+        Uses librosa to get audio metadata (no torchaudio needed).
 
         Parameters:
             file_path (str): Path to the audio file.
             class_idx (int): Class index for the audio file.
         """
-        audio_metadata = torchaudio.info(file_path)
-        audio_length = audio_metadata.num_frames / audio_metadata.sample_rate
+        # Load only the metadata (duration and sample rate)
+        y, sr = librosa.load(file_path, sr=None, mono=True)
+        audio_length = len(y) / sr
         num_segments = math.ceil(audio_length / self.duration)
-        
+
         for i in range(num_segments):
             start_time = i * self.duration
             self.file_list.append((file_path, class_idx, start_time))
-            self.file_sample_rates.append(audio_metadata.sample_rate)
+            self.file_sample_rates.append(sr)
+    # def _add_file_segments(self, file_path, class_idx):
+    #     """
+    #     Add file segments to the file_list based on audio duration.
+
+    #     Parameters:
+    #         file_path (str): Path to the audio file.
+    #         class_idx (int): Class index for the audio file.
+    #     """
+    #     audio_metadata = torchaudio.info(file_path)
+
+    #     audio_length = audio_metadata.num_frames / audio_metadata.sample_rate
+    #     num_segments = math.ceil(audio_length / self.duration)
+        
+    #     for i in range(num_segments):
+    #         start_time = i * self.duration
+    #         self.file_list.append((file_path, class_idx, start_time))
+    #         self.file_sample_rates.append(audio_metadata.sample_rate)
 
     def get_class_name(self, class_idx):
         """
@@ -329,47 +295,38 @@ class MAudioDataset(Dataset):
 
     def __getitem__(self, idx):
         """
-        Generates one sample of data.
-
-        Parameters:
-            idx (int): Index of the sample to be fetched.
-
-        Returns:
-            tuple: A tuple containing the audio sample (waveform and sample rate) and the label (class ID).
+        Generates one sample of data using librosa instead of torchaudio.
         """
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
-        # Get the file path, label, and start time
+        # Get file path, label, start time
         audio_path, label_idx, start_time = self.file_list[idx]
         sr = self.file_sample_rates[idx]
 
-        # Load the audio segment
-        # waveform, sample_rate = torchaudio.load(audio_path, 
-        #                                         frame_offset=int(start_time * sample_rate),
-        #                                         num_frames=int(self.duration * sample_rate))
-        
-        if sr == self.target_sample_rate:
-            waveform, sample_rate = torchaudio.load(audio_path, 
-                                                frame_offset=int(start_time * self.target_sample_rate),
-                                                num_frames=int(self.duration * self.target_sample_rate))
-        else:
-            waveform, sample_rate = torchaudio.load(audio_path, 
-                                                frame_offset=int(start_time * sr),
-                                                num_frames=int(self.duration * sr))
+        # Load the full audio with librosa
+        y, file_sr = librosa.load(audio_path, sr=None, mono=True)
 
-        # Resample if necessary
-        if sample_rate != self.target_sample_rate:
-            resampler = torchaudio.transforms.Resample(sample_rate, self.target_sample_rate)
-            waveform = resampler(waveform)
+        # Compute start and end sample indices for the segment
+        start_sample = int(start_time * file_sr)
+        end_sample = start_sample + int(self.duration * file_sr)
+        end_sample = min(end_sample, len(y))  # avoid overflow
 
-        # Calculate the number of samples to extract after resampling
+        # Extract the segment
+        segment = y[start_sample:end_sample]
+
+        # Resample if needed
+        if file_sr != self.target_sample_rate:
+            segment = librosa.resample(segment, orig_sr=file_sr, target_sr=self.target_sample_rate)
+
+        # Convert to (channels, samples) to mimic torchaudio
+        waveform = torch.tensor(segment, dtype=torch.float32).unsqueeze(0)
+
+        # Pad or truncate to exactly self.duration
         samples_to_extract = int(self.duration * self.target_sample_rate)
-
-        # Pad or truncate the waveform to the desired duration
         if waveform.size(1) < samples_to_extract:
             pad_length = samples_to_extract - waveform.size(1)
-            waveform = torch.nn.functional.pad(waveform, (0, pad_length), 'constant', 0)
+            waveform = torch.nn.functional.pad(waveform, (0, pad_length))
         elif waveform.size(1) > samples_to_extract:
             waveform = waveform[:, :samples_to_extract]
 
@@ -515,19 +472,25 @@ class AugAudioDataset(Dataset):
             file_path (str): Path to the audio file.
             class_idx (int): Integer label of the class.
         """
-        audio_metadata = torchaudio.info(file_path)
-        audio_length = audio_metadata.num_frames / audio_metadata.sample_rate
+        # Load the audio header only (librosa can provide sr without loading full audio)
+        # librosa.get_duration can read duration without loading entire audio
+        y, sr = librosa.load(file_path, sr=None, mono=True)
+        audio_length = len(y) / sr  # duration in seconds
+
         num_segments = math.ceil(audio_length / self.duration)
 
         for i in range(num_segments):
             start_time = i * self.duration
             self.file_list.append((file_path, class_idx, start_time))
-            self.file_sample_rates.append(audio_metadata.sample_rate)
+            self.file_sample_rates.append(sr)
+
 
     def __len__(self) -> int:
         return len(self.file_list)
 
-    def __getitem__(self, idx: int) -> Tuple[Dict[str, Tensor], int]:
+
+
+    def __getitem__(self, idx: int) -> Tuple[Dict[str, torch.Tensor], int]:
         """
         Loads and returns an audio waveform segment and its label.
 
@@ -537,19 +500,29 @@ class AugAudioDataset(Dataset):
         audio_path, label_idx, start_time = self.file_list[idx]
         sr = self.file_sample_rates[idx]
 
-        # Load a segment of the audio file
-        waveform, sample_rate = torchaudio.load(
+        # --- Load segment using librosa ---
+        waveform_np, sample_rate = librosa.load(
             audio_path,
-            frame_offset=int(start_time * sr),
-            num_frames=int(self.duration * sr)
+            sr=sr,                  # preserve original sample rate
+            mono=True,              # convert to mono
+            offset=start_time,      # start time in seconds
+            duration=self.duration  # duration in seconds
         )
 
-        # Resample if needed
-        if sample_rate != self.target_sample_rate:
-            resampler = T.Resample(orig_freq=sample_rate, new_freq=self.target_sample_rate)
-            waveform = resampler(waveform)
+        # Convert to tensor and shape [channels, samples] like torchaudio
+        waveform = torch.tensor(waveform_np).unsqueeze(0)  # [1, num_samples]
 
-        # Pad or truncate to match the desired length
+        # --- Resample if needed ---
+        if sample_rate != self.target_sample_rate:
+            waveform = torch.nn.functional.interpolate(
+                waveform.unsqueeze(0),  # add batch dim
+                size=int(waveform.size(1) * self.target_sample_rate / sample_rate),
+                mode='linear',
+                align_corners=False
+            ).squeeze(0)
+            sample_rate = self.target_sample_rate
+
+        # --- Pad or truncate to match the desired length ---
         samples_to_extract = int(self.duration * self.target_sample_rate)
         if waveform.size(1) < samples_to_extract:
             pad_length = samples_to_extract - waveform.size(1)
@@ -557,7 +530,7 @@ class AugAudioDataset(Dataset):
         elif waveform.size(1) > samples_to_extract:
             waveform = waveform[:, :samples_to_extract]
 
-        # Apply optional waveform transformation (augmentation)
+        # --- Apply optional waveform transformation (augmentation) ---
         if self.transform:
             waveform = self.transform(waveform)
 

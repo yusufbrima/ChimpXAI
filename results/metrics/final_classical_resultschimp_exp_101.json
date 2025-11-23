@@ -1,0 +1,55 @@
+{
+    "decision_tree": {
+        "accuracy": 0.3875968992248062,
+        "f1": 0.3814257412581626,
+        "params": {
+            "batch_size": 16,
+            "duration": 1.0,
+            "time_stretch_rate": 0.9116167224336399,
+            "pitch_shift_semitones": 2,
+            "shift_prob": 0.3803345035229626,
+            "n_fft": 1024,
+            "hop_length": 128,
+            "max_depth": 7,
+            "min_samples_split": 7,
+            "min_samples_leaf": 6,
+            "criterion": "log_loss"
+        }
+    },
+    "random_forest": {
+        "accuracy": 0.4728682170542636,
+        "f1": 0.43763512077934963,
+        "params": {
+            "batch_size": 16,
+            "duration": 1.0,
+            "time_stretch_rate": 1.0108708105022801,
+            "pitch_shift_semitones": 1,
+            "shift_prob": 0.32588001872833694,
+            "n_fft": 1024,
+            "hop_length": 256,
+            "n_estimators": 60,
+            "max_depth": 28,
+            "min_samples_split": 15,
+            "min_samples_leaf": 5,
+            "criterion": "entropy"
+        }
+    },
+    "xgboost": {
+        "accuracy": 0.39705882352941174,
+        "f1": 0.3812669452807861,
+        "params": {
+            "batch_size": 16,
+            "duration": 2.0,
+            "time_stretch_rate": 0.9147593129470798,
+            "pitch_shift_semitones": 0,
+            "shift_prob": 0.4907907606857297,
+            "n_fft": 1024,
+            "hop_length": 256,
+            "n_estimators": 281,
+            "learning_rate": 0.0012959140389092571,
+            "max_depth": 5,
+            "subsample": 0.9752057420382794,
+            "colsample_bytree": 0.9451318919454581
+        }
+    }
+}

@@ -19,6 +19,76 @@ from sklearn.metrics.pairwise import cosine_similarity
 import torch.nn as nn
 from torcheval.metrics.functional import multiclass_f1_score
 from config import MODELS_PATH,FIG_PATH
+import torch
+from collections import Counter
+
+def compute_class_weights(labels, method='inverse', beta=0.99, device='cpu'):
+    """
+    Compute class weights for imbalanced classification.
+
+    Args:
+        labels (list or array): List of integer class labels.
+        method (str): 'inverse' for inverse-frequency weighting,
+                      'effective' for effective-number weighting,
+                      'none' for no weighting (all weights = 1).
+        beta (float): Hyperparameter for effective-number weighting (ignored for 'inverse' and 'none').
+        device (str or torch.device): Device to put the resulting tensor on.
+
+    Returns:
+        torch.Tensor: Class weights.
+    """
+    labels = np.array(labels)
+    unique_classes = np.unique(labels)
+    num_classes = len(unique_classes)
+    counts = np.array([np.sum(labels == c) for c in unique_classes])
+
+    if method == 'inverse':
+        # Inverse frequency
+        weights = len(labels) / (num_classes * counts)
+    elif method == 'effective':
+        # Effective number of samples
+        effective_num = 1.0 - np.power(beta, counts)
+        weights = (1.0 - beta) / effective_num
+        weights = weights / np.sum(weights) * num_classes  # normalize like sklearn
+    elif method == 'none':
+        # No weighting
+        weights = np.ones(num_classes, dtype=np.float32)
+    else:
+        raise ValueError(f"Unknown method '{method}'. Choose 'inverse', 'effective', or 'none'.")
+
+    return torch.tensor(weights, dtype=torch.float, device=device)
+
+# def compute_class_weights(labels, method='inverse', beta=0.99, device='cpu'):
+#     """
+#     Compute class weights for imbalanced classification.
+
+#     Args:
+#         labels (list or array): List of integer class labels.
+#         method (str): 'inverse' for inverse-frequency weighting,
+#                       'effective' for effective-number weighting.
+#         beta (float): Hyperparameter for effective-number weighting (ignored for 'inverse').
+#         device (str or torch.device): Device to put the resulting tensor on.
+
+#     Returns:
+#         torch.Tensor: Class weights.
+#     """
+#     labels = np.array(labels)
+#     unique_classes = np.unique(labels)
+#     num_classes = len(unique_classes)
+#     counts = np.array([np.sum(labels == c) for c in unique_classes])
+
+#     if method == 'inverse':
+#         # Inverse frequency
+#         weights = len(labels) / (num_classes * counts)
+#     elif method == 'effective':
+#         # Effective number of samples
+#         effective_num = 1.0 - np.power(beta, counts)
+#         weights = (1.0 - beta) / effective_num
+#         weights = weights / np.sum(weights) * num_classes  # normalize like sklearn
+#     else:
+#         raise ValueError(f"Unknown method '{method}'. Choose 'inverse' or 'effective'.")
+
+#     return torch.tensor(weights, dtype=torch.float, device=device)
 
 
 class AudioDataProcessor:
@@ -119,6 +189,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,
             # Forward pass
             outputs = model(data)
             _, preds = torch.max(outputs, 1)
+            # print(outputs.shape, labels.shape)
             loss = criterion(outputs, labels)
             
             # Backward pass and optimization

@@ -1,150 +1,248 @@
-# Deep Learning for Recognizing Individual Chimpanzees from Vocalizations
+Below is a **cleaned, reorganized, and professional** README where:
+# **Vocal Individuality in Male Chimpanzees (*Pan troglodytes troglodytes*) in the Wild: An Explainable Deep Learning Analysis**
 
-## High-Level Workflow to Run the Experiments
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)]()
+[![License](https://img.shields.io/badge/License-MIT-green.svg)]()
+[![Last Commit](https://img.shields.io/github/last-commit/yusufbrima/ChimpXAI.svg)]()
+[![Issues](https://img.shields.io/github/issues/yusufbrima/ChimpXAI.svg)]()
+[![Stars](https://img.shields.io/github/stars/yusufbrima/ChimpXAI.svg)]()
 
-### Clone the Repository
+This repository provides the full pipeline for detecting vocal individuality in wild chimpanzee pant-hoots using deep learning and explainable AI methods.
+It includes preprocessing tools, training code, hyperparameter optimization, classical ML baselines, and a suite of saliency-based interpretability methods.
+
+External macaque dataset (used for cross-species validation):
+[https://github.com/earthspecies/library/tree/main/macaques](https://github.com/earthspecies/library/tree/main/macaques)
+
+---
+
+# **📑 Table of Contents**
+
+* [Overview](#overview)
+* [Installation](#installation)
+* [Configuration](#configuration)
+* [CLI Arguments](#cli-arguments)
+* [Dataset Preparation](#dataset-preparation)
+* [Training & Hyperparameter Optimization](#training--hyperparameter-optimization)
+
+  * [Deep Learning Models](#1-deep-learning-models)
+  * [Classical ML Models](#2-classical-ml-models)
+* [Explainability & Saliency Maps](#explainability--saliency-maps)
+* [Notebooks](#notebooks)
+* [Sample Outputs](#sample-outputs)
+
+  * [Chimpanzees](#chimpanzees)
+  * [Macaques](#macaques)
+* [Acknowledgements](#acknowledgements)
+
+---
+
+# **Overview**
+
+This project examines whether deep learning models can identify individual wild chimpanzees based solely on pant-hoot vocalizations.
+The pipeline includes:
+
+* Audio preprocessing
+* Spectrogram generation
+* CNN/Transformer model training
+* Hyperparameter search with Optuna
+* Traditional ML baselines
+* Saliency-based explainability
+* Cross-species generalization experiments
+
+---
+
+# **Installation**
+
+## Clone Repository
+
 ```bash
-git clone git@github.com:yusufbrima/IVRContrastive.git
-cd IVRContrastive
+git clone git@github.com:yusufbrima/ChimpXAI.git
+cd ChimpXAI
 ```
 
-### Create and Activate Conda Environment
+## Create & Activate Environment
+
 ```bash
-conda env create -f environment.yml
-conda activate deepc
+conda env create -n chimpxai python=3.12
+conda activate chimpxai
+pip install -r requirements.txt
 ```
 
-### Configure Data, Model Architectures, and Hyperparameters
-Modify the settings in `config.py` as needed.
+---
 
-### Split the Dataset
-Run the following script to split the dataset into training and validation sets:
-```bash
-python data_split.py
+# **Configuration**
+
+All customizable settings (paths, audio parameters, model configs, spectrogram settings, etc.) are stored in:
+
+```
+config.py
 ```
 
-### Train the Classifiers
-Run the `run_trainer.sh` bash script to train the classifiers for n experimental runs. Alternatively, use the following command:
+You should edit this file before running experiments.
+
+---
+
+# **CLI Arguments**
+
+These flags are used throughout training, hyperparameter search, and explainability scripts:
+
+| Flag             | Description                                        |
+| ---------------- | -------------------------------------------------- |
+| `--model_name`   | Model class (`CustomCNNModel`, `ViTModel`)         |
+| `--modelstr`     | Architecture (`dense121`, `resnet18`)              |
+| `--experiment`   | Integer experiment ID                              |
+| `--target_class` | Label group (`chimpanzee_ir`, `macaque`, etc.)     |
+| `--n_trials`     | Number of Optuna trials                            |
+| `--ft`           | Use fine-tuned model (`True`/`False`)              |
+| `--duration`     | Duration (seconds) of audio used for visualization |
+| `--model_type`   | Category (`classifier`)                            |
+
+---
+
+# **Dataset Preparation**
+
+## Split the Dataset
+
 ```bash
-python trainer.py --modelstr dense121 --experiment 1 --target_class chimpanzee_ir
+python splitter.py
 ```
 
-#### CLI Arguments for `trainer.py`
-- `--modelstr`: Model architecture (options: `dense121`, `resnet18`)
-- `--experiment`: Non-negative integer for the experiment identifier
-- `--target_class`: Target class for training (e.g., `chimpanzee_ir`)
+This organizes audio into training, validation, and test sets.
 
-### Contrastive Pre-Training
-Run the `run_pretrain.sh` bash script where the `PYTHON_SCRIPT` variable is set to `contrastive.py`. Alternatively, use the following command:
+---
+
+# **Training & Hyperparameter Optimization**
+
+To run multiple experiments in parallel:
+
 ```bash
-python3 contrastive.py --experiment 1 --target_class chimpanzee_ir --modelstr dense121 --contrastive_method supcon
+bash run_all_parallel.sh
 ```
 
-#### CLI Arguments for `contrastive.py`
-- `--experiment`: Non-negative integer for an already pre-trained contrastive model
-- `--target_class`: Target class for training (e.g., `chimpanzee_ir`)
-- `--modelstr`: Model architecture (options: `dense121`, `resnet18`)
-- `--contrastive_method`: Contrastive method (options: `triplet`, `supcon`)
+---
 
-### Linear Probing on Trained Models
-Run the `run_finetune.sh` bash script where the `PYTHON_SCRIPT` variable is set to `linear_probing.py`. Alternatively, use the following command:
+## **1) Deep Learning Models**
+
+### **(a) Hyperparameter Search (Optuna)**
+
 ```bash
-python3 linear_probing.py --experiment 1 --target_class chimpanzee_ir --modelstr dense121 --contrastive_method supcon
+python optuna_search.py \
+    --model_name "$MODEL_NAME" \
+    --modelstr "$MODEL_STR" \
+    --target_class "$TARGET" \
+    --n_trials "$N_TRIALS_DEEP" \
+    --experiment "$EXPERIMENT_ID"
 ```
 
-#### CLI Arguments for `linear_probing.py`
-- `--experiment`: Non-negative integer for an already pre-trained contrastive model
-- `--target_class`: Target class for training (e.g., `chimpanzee_ir`)
-- `--modelstr`: Model architecture (options: `dense121`, `resnet18`)
-- `--contrastive_method`: Contrastive method (options: `triplet`, `supcon`)
+### **(b) Train the Model with Best Hyperparameters**
 
-### Fine-Tuning Pre-Trained Models
-Run the `run_finetune.sh` bash script where the `PYTHON_SCRIPT` variable is set to `finetune.py`. Alternatively, use the following command:
 ```bash
-python3 finetune.py --experiment 1 --target_class chimpanzee_ir --modelstr dense121 --contrastive_method supcon
+python train_with_best_hyperparams.py \
+    --model_name "$MODEL_NAME" \
+    --modelstr "$MODEL_STR" \
+    --experiment "$EXPERIMENT_ID" \
+    --target_class "$TARGET"
 ```
 
-#### CLI Arguments for `finetune.py`
-- `--experiment`: Non-negative integer for an already pre-trained contrastive model
-- `--target_class`: Target class for training (e.g., `chimpanzee_ir`)
-- `--modelstr`: Model architecture (options: `dense121`, `resnet18`)
-- `--contrastive_method`: Contrastive method (options: `triplet`, `supcon`)
+---
 
-### Extracting Learned Representations
-Run the `run_representations.sh` bash script to extract all representations for both top-performing classifiers and contrastive models. Alternatively, use the following command:
+## **2) Classical ML Models**
+
+### **(a) Hyperparameter Search**
+
 ```bash
-python extract_rep.py --modelstr dense121 --target_class chimpanzee_ir --model_type dense121 --method supcon --experiment 1
+python classical_model_optuna_all.py \
+    --n_trials "$N_TRIALS_CLASSICAL" \
+    --experiment "$EXPERIMENT_ID"
 ```
 
-### Plotting DET EER Curves
-To plot the DET EER curves, run:
-```bash
-python det_plot.py
-```
-To get the results for females, set the `females` variable; otherwise, leave it as `null`.
+### **(b) Train Final Classical Models**
 
-### Saliency Analysis of Trained Models
-Run the following command for saliency analysis:
 ```bash
-python saliency.py --ft True --target_class chimpanzee_ir --experiment 1 --contrastive_method triplet
+python train_final_classical_models.py \
+    --experiment "$EXPERIMENT_ID"
 ```
 
-#### CLI Arguments for `saliency.py`
-- `--experiment`: Non-negative integer for an already pre-trained contrastive model
-- `--target_class`: Target class for training (e.g., `chimpanzee_ir`)
-- `--modelstr`: Model architecture (options: `dense121`, `resnet18`)
-- `--contrastive_method`: Contrastive method (options: `triplet`, `supcon`)
-- `--model_type`: Model type (options: `classifier`, `contrastive`)
-- `--ft`: Boolean flag to indicate whether to use fine-tuned models
-- `--duration`: Duration of the selected audios to use in the batch
+---
 
-## Additional Information
+# **Explainability & Saliency Maps**
 
-### Sample Predictions
-Details and results of sample predictions.
+## Compute saliency maps for a specific model
 
-### DET Curves
-Visualization and analysis of Detection Error Tradeoff (DET) curves.
+```bash
+python saliency.py \
+    --experiment 103 \
+    --model_name CustomCNNModel \
+    --modelstr dense121 \
+    --ft false
+```
 
-![DET Curves for male pant-hoots](graphics/eer_scores_contrastive_experiment_1.png)
+## Run all XAI methods for a model
 
-![DET Curves for female pant-hoots](graphics/eer_scores_contrastive_experiment_1__females.png)
+```bash
+python sal.py \
+    --experiment 100 \
+    --model_name CustomCNNModel \
+    --modelstr dense121 \
+    --ft false
+```
 
-### Heatmaps for In-Distribution Data
-Analysis of heatmaps for in-distribution data.
+## Run saliency for all models for a dataset
 
-![Heatmaps for DenseNet121 Classifier for In-Distribution Data](graphics/cosine_similarityclassifier_dense121_classifier_heatmap.png)
+```bash
+./run_all_saliency_models.sh
+```
 
-![Heatmaps for DenseNet121 SupCon model for In-Distribution Data](graphics/cosine_similarity_contrastive_dense121_contrastive_supcon_heatmap.png)
+---
 
-### Heatmaps for Out-of-Distribution Data
-Analysis of heatmaps for out-of-distribution data.
+# **Notebooks**
 
-![Heatmaps for Out-of-Distribution Data](graphics/cosine_similarity_dense121_classifier_heatmap_females.png)
+Exploration, visualization, and analysis notebook:
 
-### Sample Saliency Maps
-Visualization and interpretation of sample saliency maps.
+```
+Playground.ipynb
+```
 
-![Sample Saliency Maps](graphics/scorecam.png)
+---
 
-### Cluster Size Prediction
+# **Sample Outputs**
 
-![ResNet18 Classifier Male Chimps](graphics/resnet18_classifier_chimpanzee_ir_experiment_12_elbow.png)
+## **Chimpanzees**
 
-![Resnet18 Classifier Female Chims](graphics/random_log_spectrogram_resnet18_chimpanzee_ir_classifier_experiment_12_samples_predictions.png)
+### Annotated pant-hoot spectrogram
 
+![Annotated Spectrogram](results/figures/pant_hoot_phases_chimp.png)
 
-### Embedding Structure
-![Resnet18 Contrastive Model](graphics/resnet18_chimpanzee_ir_contrastive_triplet_experiment_12_tsne.png)
+### Waveform and spectrogram
 
-### Sample Predictions
+![Waveform and Spectrogram](results/figures/representative_samples_chimp.png)
 
-![DenseNet121 Classifier](graphics/random_log_spectrogram_chimpanzee_ir_dense121_classifier_experiment_34_samples_predictions.png)
+### Sample saliency maps (ResNet18)
 
-![Resnet18 Contrastive Model](graphics/resnet18_contrastive_chimpanzee_ir_supcon_experiment_1_elbow_females.png)
+![Chimp Saliency](results/figures/chimp_resnet18_samplewise_CAMs_waveform.png)
 
-## Further Result Analysis and Visualization
-Further result analysis and visualization can be found in `Playground.ipynb`.
+---
 
-## Acknowledgement
-We thank the Agence Nationale des Parcs Nationaux and the Centre National de la Recherche Scientifique et Technique of Gabon for their collaboration and permission to conduct research in the Loango National Park. Special thanks to C. Boesch, T. Deschner, A. Mascaro, F. Makaya, U. Bora Moussouami, and the Ozouga Research Team for their invaluable assistance and support. This work was funded by the Deutsche Forschungsgemeinschaft (DFG) under the "Computational Cognition" research training group (GRK2340) and an EU-Consolidator grant (772000, TurnTaking) from the European Research Council (ERC) under the EU's Horizon 2020 programme.
+## **Macaques**
+
+### Waveform and spectrogram
+
+![Waveform and Spectrogram](results/figures/representative_samples_macaque.png)
+
+### Sample saliency maps
+
+![Macaque Saliency](results/figures/macaque_resnet18_samplewise_CAMs_waveform.png)
+
+---
+
+# **Acknowledgements**
+
+We thank the Agence Nationale des Parcs Nationaux and the Centre National de la Recherche Scientifique et Technique of Gabon for permitting research in Loango National Park.
+
+Special thanks to:
+C. Boesch, T. Deschner, A. Mascaro, F. Makaya, U. Bora Moussouami, and the Ozouga Research Team.
+
+**Funding:**
+
+* Deutsche Forschungsgemeinschaft (DFG) – Computational Cognition (GRK2340)
+* European Research Council (ERC) – Consolidator Grant (772000, TurnTaking)

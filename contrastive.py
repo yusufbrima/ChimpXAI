@@ -9,7 +9,7 @@ import torch.optim as optim
 import torchvision.models as models
 import numpy as np
 from torch.utils.data import DataLoader, random_split
-from dataset import MAudioDataset,SpectrogramDataset
+from dataset import SpectrogramDataset
 from models import ContrastiveCNN
 from config import BATCH_SIZE, PT_LEARNING_RATE, EPOCHS, SEED, MODELS_PATH, RESULTS_PATH,MODELSTRS,SAMPLING_RATE, LATENT_DIM,HUMAN_DATA_PATH,DATA_PATH,CHIMPANZEE_DATA_PATH
 from utils import train_model, test_model, EarlyStopping, plot_confusion_matrix

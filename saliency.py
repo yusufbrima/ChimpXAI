@@ -1,173 +1,334 @@
-import click
-from pathlib import Path
-import pandas as pd
 import torch
-import torchaudio
-from torch.utils.data import Dataset, DataLoader
-import torchaudio.transforms as transforms
-import torch.nn as nn
-import torch.optim as optim
-import torchvision.models as models
-# from torchcam.methods import ScoreCAM,SmoothGradCAMpp
-from camlib import CAM, GradCAM, GradCAMpp, SmoothGradCAMpp, ScoreCAM
-from torchvision.transforms.functional import normalize, resize, to_pil_image
-# from torchcam.utils import overlay_mask
-# from camviz import visualize
-from PIL import Image
-import librosa.display
+import argparse
+import json
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+import librosa
+import librosa.display
+from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+from data.dataset import AugSpectrogramDataset
+from models.cnn import CustomCNNModel
+from models.vit import ViTModel
+from config import EXPORT_DATA_PATH, RESULTS_PATH, MODELS_PATH, SAMPLING_RATE, FIG_PATH,DATA_SENTINEL
+from scipy.ndimage import zoom
+from collections import defaultdict
+import random
+from pytorch_grad_cam import GradCAM, GradCAMPlusPlus, ScoreCAM, FinerCAM
 
-from dataset import MAudioDataset, SpectrogramDataset
-from models import CustomCNNModel, ContrastiveCNN, FinetuningClassifier
-from config import DATA_PATH, BATCH_SIZE, SEED, MODELS_PATH, MODELSTRS, SAMPLING_RATE,FIG_PATH, FONTSIZE, LATENT_DIM,CHIMPANZEE_DATA_PATH
-
-# Set random seed for reproducibility
-# torch.manual_seed(SEED)
-# np.random.seed(SEED)
-
-# Check if GPU is available
+# -----------------------------
+# DEVICE
+# -----------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-@click.command()
-@click.option('--experiment', default=1, type=int, help='Experiment number')
-@click.option('--target_class', default='chimpanzee_ir', help='Target class for classification')
-@click.option('--ft', default=False, type=bool, help='Fine-tune model')
-@click.option('--contrastive_method', default='triplet', help='Contrastive method to use for the model')
-@click.option('--duration', default=2, type=int, help='Duration of audio samples')
-def main(experiment, target_class, ft,contrastive_method, duration):
+# -----------------------------
+# EXTRACT SAMPLES AND SAVE NPZ
+# -----------------------------
+
+def extract_one_sample_per_class(dataset, save_path, seed=None):
     """
-    Main function to extract features from audio samples using a pre-trained model.
+    Randomly extracts one sample per class from a dataset and saves the result
+    as a compressed NumPy archive (.npz).
+
+    Args:
+        dataset: A PyTorch-style dataset where dataset[i] returns (sample, label),
+                 and each sample is a dict containing 'data', 'waveform', 'sample_rate'.
+        save_path (str): Path to save the compressed .npz file.
+        seed (int, optional): Random seed for reproducibility.
     """
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
 
-    dataset = SpectrogramDataset(f"{CHIMPANZEE_DATA_PATH}/val", duration=duration, target_sample_rate=SAMPLING_RATE)
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2)
+    # Group indices by class
+    class_indices = defaultdict(list)
+    classes = dataset.classes
+    for i in range(len(dataset)):
+        _, label = dataset[i]
+        class_indices[label].append(i)
 
+    # Pick one random index per class
+    class_to_sample = {}
+    for label, idxs in class_indices.items():
+        random_idx = random.choice(idxs)
+        sample, _ = dataset[random_idx]
+        class_to_sample[label] = sample
 
+    # Collect arrays
+    data_list, waveform_list, sample_rate_list, labels_list = [], [], [], []
 
+    for label, sample in sorted(class_to_sample.items()):
+        data = sample['data'].numpy()
+        waveform = sample['waveform'].numpy()
+        sample_rate = sample['sample_rate']
 
+        # Ensure channel dimension exists
+        if data.ndim == 2:
+            data = data[:, None, :]
+        if waveform.ndim == 2:
+            waveform = waveform[:, None, :]
 
+        data_list.append(data)
+        waveform_list.append(waveform)
+        sample_rate_list.append(sample_rate)
+        labels_list.append(label)
 
-    if ft == True:
-        # dense_model = CustomCNNModel(num_classes=11, weights=None, modelstr='dense121')
-        model = ContrastiveCNN(latent_dim=LATENT_DIM, weights=None,  modelstr='dense121')
-        dense_model = FinetuningClassifier(model, num_classes=11).to(device)
-        dense_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_ft_full_dense121_{target_class}_{contrastive_method}_experiment_{experiment}.pth', map_location=device))
-        
-        model = ContrastiveCNN(latent_dim=LATENT_DIM, weights=None,  modelstr='resnet18')
-        resnet_model = FinetuningClassifier(model, num_classes=11).to(device)
-        resnet_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_ft_full_resnet18_{target_class}_{contrastive_method}_experiment_{experiment}.pth', map_location=device))
-        save_prefix = f'ft_{contrastive_method}_'
+    # Convert to NumPy arrays
+    data_array = np.stack(data_list)
+    waveform_array = np.stack(waveform_list)
+    sample_rate_array = np.array(sample_rate_list)
+    labels_array = np.array(labels_list)
+
+    # Save compressed array
+    np.savez_compressed(
+        save_path,
+        data=data_array,
+        waveform=waveform_array,
+        sample_rate=sample_rate_array,
+        labels=labels_array
+    )
+
+    print(f"Saved {len(labels_array)} random class samples → {save_path}")
+
+# -----------------------------
+# RESHAPE TRANSFORM FOR VIT
+# -----------------------------
+def reshape_transform(tensor, height=14, width=14):
+    result = tensor[:, 1:, :].reshape(tensor.size(0), height, width, tensor.size(2))
+    result = result.transpose(2, 3).transpose(1, 2)
+    return result
+
+# -----------------------------
+# LOAD MODEL
+# -----------------------------
+def load_model(args):
+    if args.model_name == 'CustomCNNModel':
+        modelstr_save_name = args.modelstr
+    elif args.model_name == 'ViTModel':
+        modelstr_save_name = 'ViTModel'
     else:
-        dense_max = 45
-        resnet_max = 44
-        dense_model = CustomCNNModel(num_classes=11, weights=None, modelstr='dense121')
-        dense_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_dense121_{target_class}_experiment_{dense_max}.pth', map_location=device))
+        raise ValueError(f"Unknown model_name: {args.model_name}")
+    
+    if not args.ft:
+        model_path = Path(f"{MODELS_PATH}/best_model_experiment_{args.modelstr}_{args.target_class}_{modelstr_save_name}_exp_{args.experiment}.pth")
+    else:
+        Path(f"{MODELS_PATH}/finetuned_model_{args.modelstr}_{args.target_class}_{args.contrastive_method}_{modelstr_save_name}_exp_{args.experiment}.pth")
 
-        resnet_model = CustomCNNModel(num_classes=11, weights=None, modelstr='resnet18')
-        resnet_model.load_state_dict(torch.load(f'{MODELS_PATH}/custom_resnet18_{target_class}_experiment_{resnet_max}.pth', map_location=device))
-        save_prefix = 'standard'
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model weights not found at {model_path}")
 
-    dense_model.to(device)
-    dense_model.eval()
+    cfg_path = Path(f'{RESULTS_PATH}/best_hyperparams_experiment_{modelstr_save_name}_{args.experiment}_{args.target_class}.json')
 
-    resnet_model.to(device)
-    resnet_model.eval()
+    with open(cfg_path, 'r') as f:
+        cfg = json.load(f)
 
-    sample,label = next(iter(dataloader))
+    test_dataset = AugSpectrogramDataset(
+        f"{EXPORT_DATA_PATH}/test",
+        duration=cfg["duration"],
+        target_sample_rate=SAMPLING_RATE,
+        n_fft=cfg["n_fft"],
+        hop_length=cfg["hop_length"]
+    )
+    num_classes = len(test_dataset.classes)
 
-    # create unique tensor that contain 1 sample for each class 
-    # to calculate the class activation map
-    unique_sample_per_class = []
-    unique_label_per_class = []
-    flag =  11
+    # Load model
+    if args.model_name == "CustomCNNModel":
+        if args.modelstr == "resnet18" or args.modelstr == "resnet34" or args.modelstr == "resnet50":
+            model = CustomCNNModel(num_classes=num_classes, modelstr=args.modelstr).to(device)
+        elif args.modelstr == "dense121":
+            model = CustomCNNModel(num_classes=num_classes, modelstr="dense121").to(device)
+        else:
+            raise ValueError(f"Unknown modelstr {args.modelstr}")
+    elif args.model_name == "ViTModel":
+        model = ViTModel(model_name="vit_base_patch16_224", num_classes=num_classes, pretrained=False, in_chans=1).to(device)
+    else:
+        raise ValueError(f"Unknown model_name {args.model_name}")
 
-    for data,labels in dataloader:
-        sample, labels = data['data'], labels
-        for i in range(len(labels)):
-            label_value = int(labels[i].item())
-            if label_value not in unique_label_per_class:
-                unique_sample_per_class.append(sample[i])
-                unique_label_per_class.append(label_value)
-            if len(unique_label_per_class) == flag:
-                break
-        if len(unique_label_per_class) == flag:
-            break
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()
+    selector_idx = args.selector_idx
+    # Select target layer
+    if args.model_name == "CustomCNNModel":
+        if args.modelstr == "resnet18" or args.modelstr == "resnet34" or args.modelstr == "resnet50":
+            # target_layers = [model.base_model.layer4[-1].conv2]
+            candidate_layers = [
+                    model.base_model.layer3[-1],          # Mid-level
+                    model.base_model.layer4[-1],          # Deepest block (default)
+                    model.base_model.layer4[-1].conv2     # Last conv in layer4
+                ]
+            target_layers = [candidate_layers[selector_idx]]  # Remove .conv2
+        elif args.modelstr == "dense121":
+            candidate_layers = [
+                model.base_model.features.denseblock3,       # Mid-level
+                model.base_model.features.denseblock4,       # Deepest block (default)
+                model.base_model.features.denseblock4.denselayer16  # Last dense layer
+            ]
+            target_layers = [candidate_layers[selector_idx]]  
+    elif args.model_name == "ViTModel":
+        candidate_layers = [
+                model.model.blocks[6].norm1,       # Middle attention block
+                model.model.blocks[-1].norm1,      # Last attention block (default)
+                model.model.norm                    # Final normalization before classifier
+            ]
+        target_layers = [candidate_layers[selector_idx]]
+    print(f"Loaded model: {args.model_name} from {model_path}")
+    return model, test_dataset, target_layers,cfg
 
-    # convert to torch tensors
-    unique_sample_per_class = torch.stack(unique_sample_per_class)
-    # unique_label_per_class = torch.stack(unique_label_per_class)
+# -----------------------------
+# RUN CLASSWISE CAM PLOTS
+# -----------------------------
+def run_cam_methods_classwise(model, data_npz, output_dir, target_layers, model_name,modelstr_save_name,target_class,classes,target_layers_string,experiment=None,cfg=None):
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    method_list = ['scorecam'] #'gradcam', 'gradcampp', 
-    modelstr_list = ['resnet18', 'dense121']
-    for method in method_list:
-        print(f"Processing method: {method}")
-        cam_output_list = []
-        class_label_list = []
-        image_list = []
-        for modelstr_item in modelstr_list:
-            for i in range(len(unique_sample_per_class)):
-                # create the ScoreCAM object
-                if modelstr_item == 'resnet18':
-                    if ft == True:
-                        # write a print statement here
-                        # print("We are here now, condition is true")
-                        target_layer = resnet_model.feature_extractor.base_model.layer4[1].conv2
-                    else:
-                        target_layer = resnet_model.base_model.layer4[1].conv2
-                    if method == 'gradcam':
-                        wrapped_model = GradCAM(resnet_model, target_layer=target_layer)
-                    elif method == 'gradcampp':
-                        wrapped_model = GradCAMpp(resnet_model, target_layer=target_layer)
-                    elif method == 'smoothgradcampp':
-                        wrapped_model = SmoothGradCAMpp(resnet_model, target_layer=resnet_model.base_model.layer4[1].conv2,n_samples=25, stdev_spread=0.15)
-                    elif method == 'scorecam':
-                        wrapped_model = ScoreCAM(resnet_model, target_layer=target_layer)
-                    # wrapped_model = GradCAM(resnet_model, target_layer=resnet_model.base_model.layer4[1].conv2)
-                elif modelstr_item == 'dense121':
-                    if ft == True:
-                        target_layer = dense_model.feature_extractor.base_model.features.denseblock4.denselayer16.conv2
-                    else:
-                        target_layer = dense_model.base_model.features.denseblock4.denselayer16.conv2
-                    if method == 'gradcam':
-                        wrapped_model = GradCAM(dense_model, target_layer=target_layer)
-                    elif method == 'gradcampp':
-                        wrapped_model = GradCAMpp(dense_model, target_layer=target_layer)
-                    elif method == 'smoothgradcampp':
-                        wrapped_model = SmoothGradCAMpp(dense_model, target_layer=target_layer,n_samples=25, stdev_spread=0.15)
-                    elif method == 'scorecam':
-                        wrapped_model = ScoreCAM(dense_model, target_layer=target_layer)
-                
-                # with torch.inference_mode():
-                cam, idx = wrapped_model(unique_sample_per_class[i].unsqueeze(0).to(device))
-                cam_output_list.append(cam)
-                class_label_list.append(f"GT: {dataset.classes[unique_label_per_class[i]]} - PT: {dataset.classes[idx]}")
-                image_list.append(unique_sample_per_class[i])
-        # print("We are here now")
-        print(cam_output_list[0].shape)
-        sentinel = 0
-        fig, axs = plt.subplots(2, 11, figsize=(25, 6))
-        for ax in axs.flatten():
-            ax.imshow(image_list[sentinel].squeeze().cpu().numpy(), origin="lower", aspect="auto", interpolation="nearest", cmap="viridis")
-            ax.imshow(cam_output_list[sentinel].squeeze().cpu().numpy(), cmap='magma', alpha=0.5, aspect='auto', origin='lower')
-            ax.set_title(class_label_list[sentinel], fontsize=FONTSIZE)
+    cam_methods = {
+        "GradCAM": GradCAM,
+        "GradCAM++": GradCAMPlusPlus,
+        "ScoreCAM": ScoreCAM,
+        "FinerCAM": FinerCAM
+    }
+
+    data_array = data_npz['data']
+    waveform_array = data_npz['waveform']
+    sample_rate_array = data_npz['sample_rate']
+    labels_array = data_npz['labels']
+
+    n_classes = len(labels_array)
+    # Get parameters from config
+    n_fft = cfg['n_fft']
+    hop_length = cfg['hop_length']
+
+    for method_name, CAMClass in cam_methods.items():
+        fig, axs = plt.subplots(2, n_classes, figsize=(4*n_classes, 6))
+
+        for col, (data, waveform, sr, label) in enumerate(zip(data_array, waveform_array, sample_rate_array, labels_array)):
+            # Prepare input tensor
+ 
+            input_tensor = torch.tensor(data).unsqueeze(0).float().to(device)
             
-            # Hide tick marks and labels, except for 10th and 11th plots
-            ax.set_xticks([])
-            if sentinel != 0 and sentinel != 11:
-                ax.set_yticks([])
+            # Get model prediction
+            model.eval()
+            with torch.no_grad():
+                outputs = model(input_tensor)
+                probabilities = torch.softmax(outputs, dim=1)
+                predicted_class = torch.argmax(probabilities, dim=1).item()
+                confidence = probabilities[0, predicted_class].item()
 
-            if sentinel == 0:
-                ax.set_ylabel('Dense121', fontsize=FONTSIZE)
-            if sentinel == 11:
-                ax.set_ylabel('Resnet18', fontsize=FONTSIZE)
-            sentinel += 1
-        plt.subplots_adjust(wspace=0.4, hspace=0.6)  # Adjust these values as needed
+
+            # CAM
+            if model_name == "ViTModel":
+                cam = CAMClass(model=model, target_layers=target_layers, reshape_transform=reshape_transform)
+            else:
+                cam = CAMClass(model=model, target_layers=target_layers)
+
+            targets = [ClassifierOutputTarget(label)]  # Use the actual label
+            grayscale_cam = cam(input_tensor=input_tensor, targets=targets)[0]
+
+            # Handle if CAM returns RGB
+            if grayscale_cam.ndim == 3:
+                grayscale_cam = grayscale_cam[:, :, 0]
+            
+            # =====================================================
+            # CREATE VISUAL SPECTROGRAM FROM ORIGINAL WAVEFORM
+            # =====================================================
+            waveform_clean = np.squeeze(waveform)
+            
+            # Compute spectrogram with same parameters as dataset
+            S = librosa.stft(waveform_clean, n_fft=n_fft, hop_length=hop_length)
+            S_db = librosa.amplitude_to_db(np.abs(S), ref=np.max)
+            
+            # Resize CAM to match spectrogram dimensions if needed
+            if grayscale_cam.shape != S_db.shape:
+                scale_factors = (S_db.shape[0] / grayscale_cam.shape[0], 
+                               S_db.shape[1] / grayscale_cam.shape[1])
+                grayscale_cam_resized = zoom(grayscale_cam, scale_factors, order=1)
+            else:
+                grayscale_cam_resized = grayscale_cam
+
+            # =====================================================
+            # DISPLAY SPECTROGRAM WITH CAM OVERLAY
+            # =====================================================
+            # Display spectrogram
+            axs[0, col].imshow(S_db, origin="lower", aspect="auto", interpolation="nearest", cmap="viridis")
+            axs[0, col].imshow(grayscale_cam_resized, cmap='inferno', alpha=0.5, aspect='auto', origin='lower')
+
+
+            # Title with true label and prediction
+            correct = "✓" if predicted_class == label else "✗"
+            title = f"True: {classes[label]} | Pred: {classes[predicted_class]} {correct}\nConf: {confidence:.2f}"
+            axs[0, col].set_title(title, fontsize=14)
+
+            # axs[0, col].set_title(f"Class {label}")
+            axs[0, col].set_xlabel("Time (s)", fontsize=14)
+            axs[0, col].set_ylabel("Frequency (bins)", fontsize=14)
+            # set the ticks fontsize
+            axs[0, col].tick_params(axis='both', which='major', labelsize=14)
+
+
+            # Waveform plot
+            axs[1, col].set_title("Waveform", fontsize=14)
+            librosa.display.waveshow(np.squeeze(waveform), sr=sr, ax=axs[1, col])
+            axs[1, col].set_xlabel("Time (s)", fontsize=14)
+            axs[1, col].set_ylabel("Amplitude", fontsize=14)
+            # set the ticks fontsize
+            axs[1, col].tick_params(axis='both', which='major', labelsize=14)
+
+        # plt.suptitle(f"{method_name} - All Classes", fontsize=14)
         plt.tight_layout()
-        save_name_prefix = f'{save_prefix}_experiment_{experiment}_scorecam'
-        fig.savefig(f'{FIG_PATH}/{save_name_prefix}.png', dpi=300, bbox_inches='tight')
-        plt.show()
+        if target_layers_string != '':
+            target_layers_string = f"_{target_layers_string}"
+        else:
+            target_layers_string = ''
+        if experiment is None:
+            experiment = ''
+        else:
+            experiment = f"_exp_{experiment}"
+        save_path = output_dir / f"{target_class}_{modelstr_save_name}_{method_name}_all_classes{target_layers_string}{experiment}.png"
+        plt.tight_layout()
+        for ax in axs.flat:
+            ax.tick_params(axis='both', which='major', labelsize=14)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+
+    print(f"Saved all classwise CAM+waveform figures → {output_dir}")
+
+# -----------------------------
+# MAIN
+# -----------------------------
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--experiment', type=int, default=100)
+    parser.add_argument('--model_name', type=str, default='CustomCNNModel')
+    parser.add_argument('--modelstr', type=str, default='resnet18')
+    parser.add_argument('--target_class', type=str, default=DATA_SENTINEL)
+    parser.add_argument('--ft', type=str, default='false', help="finetuned flag: true/false")
+    parser.add_argument('--contrastive_method', type=str, default='supcon')
+    parser.add_argument('--target_layers_string', type=str, default='', help="Comma-separated layer names for CAM")
+    parser.add_argument('--selector_idx', type=int, default=0, help="Index to select target layer from candidates")
+    args = parser.parse_args()
+
+    args.ft = args.ft.lower() == 'true'
+    output_dir = Path(FIG_PATH)
+    sample_file = Path(f"{RESULTS_PATH}/saliency_samples_experiment_{args.target_class}_{args.experiment}.npz")
+
+    model, test_dataset, target_layers,cfg = load_model(args)
+
+    classes = test_dataset.classes
+
+    # Load or extract samples
+    if not sample_file.exists():
+        extract_one_sample_per_class(test_dataset, sample_file)
+
+    data_npz = np.load(sample_file, allow_pickle=True)
+
+    if args.model_name == 'CustomCNNModel':
+        modelstr_save_name = args.modelstr
+    elif args.model_name == 'ViTModel':
+        modelstr_save_name = f'ViTModel_{args.modelstr}'
+    else:
+        raise ValueError(f"Unknown model_name: {args.model_name}")
+
+    # {modelstr}_{target_class}_{modelstr_save_name}_{method_name}
+    run_cam_methods_classwise(model, data_npz, output_dir, target_layers, args.model_name,modelstr_save_name,args.target_class,classes,args.target_layers_string,args.experiment,cfg)
 
 if __name__ == "__main__":
     main()

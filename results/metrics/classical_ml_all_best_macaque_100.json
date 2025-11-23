@@ -1,0 +1,52 @@
+{
+    "decision_tree": {
+        "best_f1": 0.891845690579823,
+        "params": {
+            "batch_size": 64,
+            "duration": 2.0,
+            "time_stretch_rate": 0.9620074454211204,
+            "pitch_shift_semitones": -1,
+            "shift_prob": 0.2084535176683528,
+            "n_fft": 256,
+            "hop_length": 256,
+            "max_depth": 32,
+            "min_samples_split": 14,
+            "min_samples_leaf": 5,
+            "criterion": "log_loss"
+        }
+    },
+    "random_forest": {
+        "best_f1": 0.9530200985878473,
+        "params": {
+            "batch_size": 8,
+            "duration": 2.0,
+            "time_stretch_rate": 0.9934784014390681,
+            "pitch_shift_semitones": 0,
+            "shift_prob": 0.44612908403414786,
+            "n_fft": 512,
+            "hop_length": 128,
+            "n_estimators": 83,
+            "max_depth": 25,
+            "min_samples_split": 10,
+            "min_samples_leaf": 2,
+            "criterion": "entropy"
+        }
+    },
+    "xgboost": {
+        "best_f1": 0.9738887717903444,
+        "params": {
+            "batch_size": 8,
+            "duration": 2.0,
+            "time_stretch_rate": 0.9670429734508883,
+            "pitch_shift_semitones": 1,
+            "shift_prob": 0.4029129402210932,
+            "n_fft": 1024,
+            "hop_length": 512,
+            "n_estimators": 294,
+            "learning_rate": 0.2859868798819305,
+            "max_depth": 10,
+            "subsample": 0.6820735360409061,
+            "colsample_bytree": 0.5075061589059534
+        }
+    }
+}

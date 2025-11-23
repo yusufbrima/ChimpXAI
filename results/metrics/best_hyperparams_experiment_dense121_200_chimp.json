@@ -1,0 +1,12 @@
+{
+    "base_channels": 96,
+    "dropout_p": 0.2778100980636522,
+    "lr": 0.0008013212568181319,
+    "batch_size": 32,
+    "duration": 1.0,
+    "time_stretch_rate": 1.0594097243662748,
+    "pitch_shift_semitones": 0,
+    "shift_prob": 0.2719324211508684,
+    "n_fft": 1024,
+    "hop_length": 512
+}
