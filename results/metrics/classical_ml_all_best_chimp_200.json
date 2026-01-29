@@ -1,52 +1,52 @@
 {
     "decision_tree": {
-        "best_f1": 0.21535548520997203,
+        "best_f1": 0.20936569650510967,
         "params": {
-            "batch_size": 16,
-            "duration": 2.0,
-            "time_stretch_rate": 1.0093420558686559,
-            "pitch_shift_semitones": -2,
-            "shift_prob": 0.49087538832936756,
-            "n_fft": 512,
-            "hop_length": 256,
-            "max_depth": 8,
-            "min_samples_split": 2,
-            "min_samples_leaf": 4,
-            "criterion": "log_loss"
-        }
-    },
-    "random_forest": {
-        "best_f1": 0.20398575162640237,
-        "params": {
-            "batch_size": 16,
+            "batch_size": 32,
             "duration": 1.0,
-            "time_stretch_rate": 0.9949928511965557,
-            "pitch_shift_semitones": -1,
-            "shift_prob": 0.4465363524434839,
+            "time_stretch_rate": 1.02903455808189,
+            "pitch_shift_semitones": -2,
+            "shift_prob": 0.4072813214307398,
             "n_fft": 512,
-            "hop_length": 256,
-            "n_estimators": 143,
-            "max_depth": 15,
-            "min_samples_split": 7,
-            "min_samples_leaf": 8,
+            "hop_length": 512,
+            "max_depth": 29,
+            "min_samples_split": 6,
+            "min_samples_leaf": 7,
             "criterion": "gini"
         }
     },
-    "xgboost": {
-        "best_f1": 0.31364250579067515,
+    "random_forest": {
+        "best_f1": 0.2781318588141662,
         "params": {
             "batch_size": 8,
+            "duration": 1.0,
+            "time_stretch_rate": 0.9751165905279888,
+            "pitch_shift_semitones": -2,
+            "shift_prob": 0.37348404229885224,
+            "n_fft": 1024,
+            "hop_length": 256,
+            "n_estimators": 59,
+            "max_depth": 27,
+            "min_samples_split": 8,
+            "min_samples_leaf": 2,
+            "criterion": "entropy"
+        }
+    },
+    "xgboost": {
+        "best_f1": 0.36744272113574966,
+        "params": {
+            "batch_size": 64,
             "duration": 2.0,
-            "time_stretch_rate": 0.9670429734508883,
+            "time_stretch_rate": 0.9669553262264646,
             "pitch_shift_semitones": 1,
-            "shift_prob": 0.4029129402210932,
+            "shift_prob": 0.20878941213733443,
             "n_fft": 1024,
             "hop_length": 512,
-            "n_estimators": 294,
-            "learning_rate": 0.2859868798819305,
+            "n_estimators": 242,
+            "learning_rate": 0.059142679948769886,
             "max_depth": 10,
-            "subsample": 0.6820735360409061,
-            "colsample_bytree": 0.5075061589059534
+            "subsample": 0.6562834216230156,
+            "colsample_bytree": 0.7719549620513757
         }
     }
 }

@@ -104,72 +104,112 @@ class SmallResCNNv5(nn.Module):
         out = self.fc(out)
         return out
     
-
 class SmallCNNModel(nn.Module):
-    def __init__(self, num_classes, modelstr='smallcnn', input_height=257, input_width=345):
-        """
-        A lightweight CNN designed for small datasets
-        
-        Parameters:
-            num_classes (int): Number of output classes
-            modelsrt (str): The type of model to use ('smallcnn')
-        """
+    def __init__(self, num_classes):
         super(SmallCNNModel, self).__init__()
-        
-        self.num_classes = num_classes
-        
-        # First convolutional block
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(32)
-        
-        # Second convolutional block
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)
-        
-        # Third convolutional block
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(128)
-        
-        # Pooling layers
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        
-        # Dropout for regularization
-        self.dropout = nn.Dropout(0.25)
-        
-        # Fully connected layers
-        # This will need to be adjusted based on your input spectrogram size
-        self.fc1 = nn.Linear(128 * (input_height//8) * (input_width//8), 256)
 
-        self.fc2 = nn.Linear(256, num_classes)
+        # ----------- Convolution blocks -----------
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=2, padding=1)   # ↓ H,W /2
+        self.gn1   = nn.GroupNorm(8, 32)
+
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)  # ↓ H,W /2
+        self.gn2   = nn.GroupNorm(8, 64)
+
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1) # ↓ H,W /2
+        self.gn3   = nn.GroupNorm(8, 128)
+
+        self.dropout = nn.Dropout(0.3)
+        self.num_classes = num_classes
+
+        # ----------- Classifier -----------
+        # After global pooling we only have 128 features
+        self.fc1 = nn.Linear(128, 64)
+        self.fc2 = nn.Linear(64, self.num_classes)
 
     def forward(self, x):
-        """
-        Forward pass of the network
-        
-        Parameters:
-            x (torch.Tensor): Input tensor (batch_size, 1, height, width)
-        
-        Returns:
-            torch.Tensor: Output logits
-        """
-        # print("Shape of input tensor:", x.shape)
-        # First conv block
-        x = self.pool(F.relu(self.bn1(self.conv1(x))))
-        
-        # Second conv block
-        x = self.pool(F.relu(self.bn2(self.conv2(x))))
-        
-        # Third conv block
-        x = self.pool(F.relu(self.bn3(self.conv3(x))))
-        
-        # Flatten
-        x = x.view(x.size(0), -1)
-        
-        # Fully connected layers with dropout
+        # x: [B, 1, H, W]
+
+        x = F.relu(self.gn1(self.conv1(x)))
+        x = F.relu(self.gn2(self.conv2(x)))
+        x = F.relu(self.gn3(self.conv3(x)))
+
+        # Global average pooling over time & frequency
+        x = F.adaptive_avg_pool2d(x, (1, 1))   # → [B, 128, 1, 1]
+        x = x.view(x.size(0), -1)              # → [B, 128]
+
+        x = self.dropout(x)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        
+
         return x
+
+
+
+# class SmallCNNModel(nn.Module):
+#     def __init__(self, num_classes, modelstr='smallcnn', input_height=257, input_width=345):
+#         """
+#         A lightweight CNN designed for small datasets
+        
+#         Parameters:
+#             num_classes (int): Number of output classes
+#             modelsrt (str): The type of model to use ('smallcnn')
+#         """
+#         super(SmallCNNModel, self).__init__()
+        
+#         self.num_classes = num_classes
+        
+#         # First convolutional block
+#         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+#         self.bn1 = nn.BatchNorm2d(32)
+        
+#         # Second convolutional block
+#         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+#         self.bn2 = nn.BatchNorm2d(64)
+        
+#         # Third convolutional block
+#         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+#         self.bn3 = nn.BatchNorm2d(128)
+        
+#         # Pooling layers
+#         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+#         # Dropout for regularization
+#         self.dropout = nn.Dropout(0.25)
+        
+#         # Fully connected layers
+#         # This will need to be adjusted based on your input spectrogram size
+#         self.fc1 = nn.Linear(128 * (input_height//8) * (input_width//8), 256)
+
+#         self.fc2 = nn.Linear(256, num_classes)
+
+#     def forward(self, x):
+#         """
+#         Forward pass of the network
+        
+#         Parameters:
+#             x (torch.Tensor): Input tensor (batch_size, 1, height, width)
+        
+#         Returns:
+#             torch.Tensor: Output logits
+#         """
+#         # print("Shape of input tensor:", x.shape)
+#         # First conv block
+#         x = self.pool(F.relu(self.bn1(self.conv1(x))))
+        
+#         # Second conv block
+#         x = self.pool(F.relu(self.bn2(self.conv2(x))))
+        
+#         # Third conv block
+#         x = self.pool(F.relu(self.bn3(self.conv3(x))))
+        
+#         # Flatten
+#         x = x.view(x.size(0), -1)
+        
+#         # Fully connected layers with dropout
+#         x = F.relu(self.fc1(x))
+#         x = self.fc2(x)
+        
+#         return x
 
 class CustomCNNModel(nn.Module):
     """
@@ -415,80 +455,6 @@ class FinetuningClassifier(nn.Module):
             for param in layer.parameters():
                 param.requires_grad = True
 
-
-
-# class FinetuningClassifier(nn.Module):
-#     def __init__(self, contrastive_model, num_classes, requires_grad=False):
-#         super(FinetuningClassifier, self).__init__()
-        
-#         self.feature_extractor = contrastive_model
-#         self.requires_grad = requires_grad
-#         self.num_classes = num_classes
-        
-#         for param in self.feature_extractor.parameters():
-#             param.requires_grad = self.requires_grad
-
-#         # Use the actual latent dimension of the contrastive model
-#         latent_dim = contrastive_model.projection_head[-1].out_features
-#         self.classifier = nn.Linear(latent_dim, num_classes)
-    
-#     def forward(self, x):
-#         with torch.no_grad():
-#             features = self.feature_extractor(x)
-#         return self.classifier(features)
-
-
-# class FinetuningClassifier(nn.Module):
-#     """
-#     A classifier that uses a pre-trained ContrastiveCNN model as a feature extractor
-#     and adds a single trainable linear layer for classification.
-#     """
-#     def __init__(self, contrastive_model, num_classes,requires_grad=False):
-#         """
-#         Initializes the finetuning classifier.
-        
-#         Parameters:
-#         contrastive_model (ContrastiveCNN): A pre-trained ContrastiveCNN model.
-#         num_classes (int): The number of classes for the classification task.
-#         """
-#         super(FinetuningClassifier, self).__init__()
-        
-#         self.feature_extractor = contrastive_model
-#         self.requires_grad =  requires_grad
-#         self.num_classes =  num_classes
-        
-#         # Freeze all parameters of the feature extractor
-#         for param in self.feature_extractor.parameters():
-#             param.requires_grad = self.requires_grad
-        
-#         # Add a single trainable linear layer for classification
-#         self.classifier = nn.Linear(LATENT_DIM, num_classes)
-    
-#     def forward(self, x):
-#         """
-#         Defines the forward pass of the model.
-        
-#         Parameters:
-#         x (torch.Tensor): The input tensor.
-        
-#         Returns:
-#         torch.Tensor: The classification logits.
-#         """
-#         with torch.no_grad():
-#             features = self.feature_extractor(x)
-#         return self.classifier(features)
-
-#     def unfreeze_last_n_layers(self, n):
-#         """
-#         Unfreezes the last n layers of the feature extractor for fine-tuning.
-        
-#         Parameters:
-#         n (int): The number of layers to unfreeze, counting from the end.
-#         """
-#         trainable_layers = list(self.feature_extractor.modules())[-n:]
-#         for layer in trainable_layers:
-#             for param in layer.parameters():
-#                 param.requires_grad = True
 
 # Example usage
 if __name__ == "__main__":

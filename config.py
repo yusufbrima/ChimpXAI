@@ -8,33 +8,43 @@ MODELS_PATH = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/M
 
 EXPORT_DATA_PATH = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/ChimpSSLResults"
 
-DATA_CLEANED = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/Chimpanzee_Cleaned"
-DATA_CLEANED_FINAL = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/Chimpanzee_Cleaned_Final"
-
-# semi  full 4 chimpanzee dataset
-# CHIMPANZEE_DATA_PATH = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/Chimpanzee"
-# CHIMPANZEE_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/new_ph_clips"
-
-# full chimpanzee dataset
-CHIMPANZEE_DATA_PATH = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/Chimpanzee_full"
-CHIMPANZEE_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/new_ph_clips_full"
 
 
+CHIMPANZEE_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/output_dataset"
+CHIMPANZEE_DATA_PATH_EXPORT = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/output_dataset_exported"    
 
 # src: https://github.com/earthspecies/library/tree/main/macaques
 MACAQUE_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/macaques"
 MACAQUE_DATA_PATH = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/Macaque_Output"
 
 
+ZIBRA_FINCH_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/zebra_finch_exported" #"/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/zebra_finch_cleaned"
+ZIBRA_FINCH_DATA_PATH_EXPORT = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/zebra_finch_exported_output"
+
+FRUIT_BAT_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/egyptian_fruit_bats_exported" #"/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/egyptian_fruit_bats"
+FRUIT_BAT_DATA_PATH_EXPORT = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/egyptian_fruit_bats_exported_output"
+
+
+-00
+# find /net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/zebra_finch_exported/ -type f | wc -l
+
+# /net/projects/scratch/winter/valid_until_31_July_2026/ybrima/
+
 DATA_SENTINEL = "chimp" #either 'chimp' or 'macaque', or fruit_bat or zebra_finch
 INPUT_DATA_PATH = ""
 OUTPUT_DATA_PATH = ""
 if DATA_SENTINEL == "chimp":
-    INPUT_DATA_PATH = CHIMPANZEE_DATA_PATH_HUMAN_CLEAN
-    EXPORT_DATA_PATH = CHIMPANZEE_DATA_PATH
+    INPUT_DATA_PATH = CHIMPANZEE_DATA_PATH_HUMAN_CLEAN #CHIMPANZEE_DATA_PATH_HUMAN_CLEAN
+    EXPORT_DATA_PATH = CHIMPANZEE_DATA_PATH_EXPORT
 elif DATA_SENTINEL == "macaque":
     INPUT_DATA_PATH = MACAQUE_DATA_PATH_HUMAN_CLEAN
     EXPORT_DATA_PATH = MACAQUE_DATA_PATH
+elif DATA_SENTINEL == "zebra_finch":
+    INPUT_DATA_PATH = ZIBRA_FINCH_DATA_PATH_HUMAN_CLEAN
+    EXPORT_DATA_PATH = ZIBRA_FINCH_DATA_PATH_EXPORT
+elif DATA_SENTINEL == "fruit_bat":
+    INPUT_DATA_PATH = FRUIT_BAT_DATA_PATH_HUMAN_CLEAN
+    EXPORT_DATA_PATH = FRUIT_BAT_DATA_PATH_EXPORT
 else:
     # throw error
     raise ValueError("DATA_SENTINEL must be either 'chimp' or 'macaque'")

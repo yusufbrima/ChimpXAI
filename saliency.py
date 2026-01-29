@@ -251,13 +251,20 @@ def run_cam_methods_classwise(model, data_npz, output_dir, target_layers, model_
             axs[0, col].imshow(S_db, origin="lower", aspect="auto", interpolation="nearest", cmap="viridis")
             axs[0, col].imshow(grayscale_cam_resized, cmap='inferno', alpha=0.5, aspect='auto', origin='lower')
 
+            # Fix x-axis to show time in seconds
+            n_frames = S_db.shape[1]
+            times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
+            # Set tick positions and labels
+            tick_frames = np.linspace(0, n_frames - 1, 5).astype(int)  # 5 ticks
+            tick_times = librosa.frames_to_time(tick_frames, sr=sr, hop_length=hop_length)
+            axs[0, col].set_xticks(tick_frames)
+            axs[0, col].set_xticklabels([f'{t:.2f}' for t in tick_times])
 
             # Title with true label and prediction
             correct = "✓" if predicted_class == label else "✗"
             title = f"True: {classes[label]} | Pred: {classes[predicted_class]} {correct}\nConf: {confidence:.2f}"
             axs[0, col].set_title(title, fontsize=14)
 
-            # axs[0, col].set_title(f"Class {label}")
             axs[0, col].set_xlabel("Time (s)", fontsize=14)
             axs[0, col].set_ylabel("Frequency (bins)", fontsize=14)
             # set the ticks fontsize

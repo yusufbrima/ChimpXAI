@@ -1,55 +1,55 @@
 {
     "decision_tree": {
-        "accuracy": 0.17575757575757575,
-        "f1": 0.17025711838079702,
+        "accuracy": 0.19863013698630136,
+        "f1": 0.19097161676042712,
         "params": {
-            "batch_size": 16,
-            "duration": 2.0,
-            "time_stretch_rate": 1.0093420558686559,
-            "pitch_shift_semitones": -2,
-            "shift_prob": 0.49087538832936756,
-            "n_fft": 512,
-            "hop_length": 256,
-            "max_depth": 8,
-            "min_samples_split": 2,
-            "min_samples_leaf": 4,
-            "criterion": "log_loss"
-        }
-    },
-    "random_forest": {
-        "accuracy": 0.34967320261437906,
-        "f1": 0.2976336316241313,
-        "params": {
-            "batch_size": 16,
+            "batch_size": 32,
             "duration": 1.0,
-            "time_stretch_rate": 0.9949928511965557,
-            "pitch_shift_semitones": -1,
-            "shift_prob": 0.4465363524434839,
+            "time_stretch_rate": 1.02903455808189,
+            "pitch_shift_semitones": -2,
+            "shift_prob": 0.4072813214307398,
             "n_fft": 512,
-            "hop_length": 256,
-            "n_estimators": 143,
-            "max_depth": 15,
-            "min_samples_split": 7,
-            "min_samples_leaf": 8,
+            "hop_length": 512,
+            "max_depth": 29,
+            "min_samples_split": 6,
+            "min_samples_leaf": 7,
             "criterion": "gini"
         }
     },
-    "xgboost": {
-        "accuracy": 0.36363636363636365,
-        "f1": 0.33894925064303055,
+    "random_forest": {
+        "accuracy": 0.3561643835616438,
+        "f1": 0.3036560722707943,
         "params": {
             "batch_size": 8,
+            "duration": 1.0,
+            "time_stretch_rate": 0.9751165905279888,
+            "pitch_shift_semitones": -2,
+            "shift_prob": 0.37348404229885224,
+            "n_fft": 1024,
+            "hop_length": 256,
+            "n_estimators": 59,
+            "max_depth": 27,
+            "min_samples_split": 8,
+            "min_samples_leaf": 2,
+            "criterion": "entropy"
+        }
+    },
+    "xgboost": {
+        "accuracy": 0.410958904109589,
+        "f1": 0.3723819971213948,
+        "params": {
+            "batch_size": 64,
             "duration": 2.0,
-            "time_stretch_rate": 0.9670429734508883,
+            "time_stretch_rate": 0.9669553262264646,
             "pitch_shift_semitones": 1,
-            "shift_prob": 0.4029129402210932,
+            "shift_prob": 0.20878941213733443,
             "n_fft": 1024,
             "hop_length": 512,
-            "n_estimators": 294,
-            "learning_rate": 0.2859868798819305,
+            "n_estimators": 242,
+            "learning_rate": 0.059142679948769886,
             "max_depth": 10,
-            "subsample": 0.6820735360409061,
-            "colsample_bytree": 0.5075061589059534
+            "subsample": 0.6562834216230156,
+            "colsample_bytree": 0.7719549620513757
         }
     }
 }

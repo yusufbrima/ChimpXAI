@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
+import matplotlib.pyplot as plt
 # from dataset import AugSpectrogramDataset, Augmentation
 from data.dataset import AugSpectrogramDataset,Augmentation
 from models.cnn import SmallResCNNv5,CustomCNNModel
@@ -27,7 +28,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 @click.command()
-@click.option('--experiment', default=103, type=int, help='Experiment number (matches the Optuna experiment)')
+@click.option('--experiment', default=200, type=int, help='Experiment number (matches the Optuna experiment)')
 @click.option('--target_class', default=DATA_SENTINEL, help='Target class for classification')
 @click.option('--model_name', default='CustomCNNModel', help='Model architecture name (e.g. SmallResCNNv5, CustomCNNModel, ViTModel)')
 @click.option('--modelstr', default='resnet18', help='Model architecture to use if CustomCNNModel is selected')
@@ -123,7 +124,7 @@ def main(experiment, target_class, model_name, modelstr):
 
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
-    early_stopping = EarlyStopping(patience=10, min_delta=0.01)
+    early_stopping = EarlyStopping(patience=5, min_delta=0.01)
 
     # --- Dataset sizes ---
     print(f"\nDataset sizes:")
@@ -156,7 +157,7 @@ def main(experiment, target_class, model_name, modelstr):
     model_path = Path(f"{MODELS_PATH}/best_model_experiment_{modelstr}_{target_class}_{modelstr_save_name}_exp_{experiment}.pth")
     if model_path.parent.exists():
         experiment_id = str(model_path).split('_')[-1].split('.')[0]
-        experiment = int(experiment_id) + 1
+        # experiment = int(experiment_id) + 1
         model_path = Path(f"{MODELS_PATH}/best_model_experiment_{modelstr}_{target_class}_{modelstr_save_name}_exp_{experiment}.pth")
 
     torch.save(model.state_dict(), model_path)
@@ -176,6 +177,25 @@ def main(experiment, target_class, model_name, modelstr):
         'test_f1': [test_f1]
     }).to_csv(f"{RESULTS_PATH}/test_results_supervised_{modelstr}_{target_class}_{modelstr_save_name}_exp_{experiment}.csv", index=False)
 
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(history['train_loss'], label='Train Loss')
+    plt.plot(history['val_loss'], label='Validation Loss')
+    plt.xlabel('Epochs',fontsize=14)
+    plt.ylabel('Loss',fontsize=14)
+    plt.title('Training and Validation Loss',fontsize=14)
+    plt.legend()
+    plt.subplot(1, 2, 2)
+    plt.plot(history['train_acc'], label='Train Accuracy')
+    plt.plot(history['val_acc'], label='Validation Accuracy')
+    plt.xlabel('Epochs',fontsize=14)
+    plt.ylabel('Top-1 Accuracy',fontsize=14)
+    plt.title('Training and Validation Accuracy',fontsize=14)
+    plt.legend()
+    plt.tight_layout()
+    # plt.grid()
+    plt.savefig(f'./results/figures/training_validation_history_{DATA_SENTINEL}.png', dpi=300, bbox_inches='tight')
+    plt.close()
 
 if __name__ == "__main__":
     main()

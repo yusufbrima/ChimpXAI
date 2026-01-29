@@ -1,0 +1,10 @@
+# ignore config files
+config.py
+# ignore markdown test files
+test.md
+segment.py
+train.py
+trainer.py
+# ignore ./results_old/ directory
+results_old/
+dataset.py

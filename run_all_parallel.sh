@@ -10,10 +10,10 @@ N_TRIALS_DEEP=50
 N_TRIALS_CLASSICAL=20
 
 # ===============================
-# Model and Target Definitions
+# Model and Target Definitions 'CustomCNNModel'
 # ===============================
-MODEL_NAMES=('CustomCNNModel' 'ViTModel')
-MODEL_STRS=('resnet18' 'dense121')
+MODEL_NAMES=('ViTModel')
+MODEL_STRS=('resnet18')
 TARGET_CLASSES=('chimp')
 
 # ===============================
@@ -55,21 +55,21 @@ echo
 # ===============================
 # 2. Classical Machine Learning Models
 # ===============================
-echo "======================================"
-echo "Running Hyperparameter Search for Classical Models"
-echo "======================================"
+# echo "======================================"
+# echo "Running Hyperparameter Search for Classical Models"
+# echo "======================================"
 
-(
-  python classical_model_optuna_all.py \
-    --n_trials "$N_TRIALS_CLASSICAL" \
-    --experiment "$EXPERIMENT_ID"
+# (
+#   python classical_model_optuna_all.py \
+#     --n_trials "$N_TRIALS_CLASSICAL" \
+#     --experiment "$EXPERIMENT_ID"
 
-  python train_final_classical_models.py \
-    --experiment "$EXPERIMENT_ID"
-) &
-wait
-echo "Classical model searches completed."
-echo
+#   python train_final_classical_models.py \
+#     --experiment "$EXPERIMENT_ID"
+# ) &
+# wait
+# echo "Classical model searches completed."
+# echo
 
 # ===============================
 # 4. Completion Message

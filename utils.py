@@ -58,39 +58,6 @@ def compute_class_weights(labels, method='inverse', beta=0.99, device='cpu'):
 
     return torch.tensor(weights, dtype=torch.float, device=device)
 
-# def compute_class_weights(labels, method='inverse', beta=0.99, device='cpu'):
-#     """
-#     Compute class weights for imbalanced classification.
-
-#     Args:
-#         labels (list or array): List of integer class labels.
-#         method (str): 'inverse' for inverse-frequency weighting,
-#                       'effective' for effective-number weighting.
-#         beta (float): Hyperparameter for effective-number weighting (ignored for 'inverse').
-#         device (str or torch.device): Device to put the resulting tensor on.
-
-#     Returns:
-#         torch.Tensor: Class weights.
-#     """
-#     labels = np.array(labels)
-#     unique_classes = np.unique(labels)
-#     num_classes = len(unique_classes)
-#     counts = np.array([np.sum(labels == c) for c in unique_classes])
-
-#     if method == 'inverse':
-#         # Inverse frequency
-#         weights = len(labels) / (num_classes * counts)
-#     elif method == 'effective':
-#         # Effective number of samples
-#         effective_num = 1.0 - np.power(beta, counts)
-#         weights = (1.0 - beta) / effective_num
-#         weights = weights / np.sum(weights) * num_classes  # normalize like sklearn
-#     else:
-#         raise ValueError(f"Unknown method '{method}'. Choose 'inverse' or 'effective'.")
-
-#     return torch.tensor(weights, dtype=torch.float, device=device)
-
-
 class AudioDataProcessor:
     def __init__(self, datapath):
         self.datapath = datapath
@@ -169,7 +136,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,
         model (nn.Module): The trained model.
         dict: Dictionary containing training and validation loss, accuracy, and f1-score history.
     """
-    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [], 'train_f1': [], 'val_f1': []}
+    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [], 'train_f1': [], 'val_f1': [], 'epochs': []}
     min_valid_loss = np.inf
 
     for epoch in range(num_epochs):
@@ -249,6 +216,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,
         history['val_loss'].append(valid_loss)
         history['val_acc'].append(valid_acc)
         history['val_f1'].append(val_f1.item())
+        history['epochs'].append(epoch + 1)
         if early_stopping:
             if early_stopping(valid_loss):
                 print(f"Early stopping at epoch {epoch+1}")
