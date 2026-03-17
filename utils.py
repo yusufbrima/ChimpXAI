@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import torch
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -116,28 +117,39 @@ class AudioDataProcessor:
         return samples
 
 
-def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,early_stopping, num_epochs=25, device="cpu", save_path='saved_model.pth'):
+def train_model(model,
+                train_loader,
+                val_loader,
+                criterion,
+                optimizer,
+                scheduler=None,
+                early_stopping=None,
+                num_epochs=25,
+                device="cpu",
+                save_path='saved_model.pth',
+                clip_gradients=False):
     """
-    Train the model with the given data loaders, loss function, and optimizer.
+    Train the model with optional ReduceLROnPlateau scheduler support.
 
-    Parameters:
-        model (nn.Module): The model to train.
-        train_loader (DataLoader): DataLoader for training data.
-        val_loader (DataLoader): DataLoader for validation data.
-        criterion (nn.Module): Loss function.
-        scheduler (torch.optim.lr_scheduler): Learning rate scheduler.
-        optimizer (torch.optim.Optimizer): Optimizer.
-        early_stopping (EarlyStopping): Early stopping object.
-        num_epochs (int): Number of epochs to train the model.
-        device (str): Device to use for training ('cpu' or 'cuda').
-        save_path (str): Path to save the best model.
+    If `scheduler` is an instance of torch.optim.lr_scheduler.ReduceLROnPlateau,
+    it will be stepped with the validation loss: scheduler.step(valid_loss).
+    Otherwise the scheduler (if provided) will be stepped once per epoch with scheduler.step().
 
     Returns:
-        model (nn.Module): The trained model.
-        dict: Dictionary containing training and validation loss, accuracy, and f1-score history.
+        model, history
     """
-    history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [], 'train_f1': [], 'val_f1': [], 'epochs': []}
+    # make sure save directory exists
+    save_dir = os.path.dirname(save_path)
+    if save_dir and not os.path.exists(save_dir):
+        os.makedirs(save_dir, exist_ok=True)
+
+    history = {
+        'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [],
+        'train_f1': [], 'val_f1': [], 'epochs': []
+    }
     min_valid_loss = np.inf
+
+    model.to(device)
 
     for epoch in range(num_epochs):
         print(f'Epoch {epoch+1}/{num_epochs}')
@@ -145,86 +157,223 @@ def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,
         train_corrects = 0
         train_preds = []
         train_labels = []
-        model.train()  # Set model to training mode
-        
+        model.train()
+
         for samples, labels in train_loader:
             data, labels = samples["data"].to(device), labels.to(device)
-            
-            # Clear the gradients
+
             optimizer.zero_grad()
-            
-            # Forward pass
             outputs = model(data)
             _, preds = torch.max(outputs, 1)
-            # print(outputs.shape, labels.shape)
             loss = criterion(outputs, labels)
-            
-            # Backward pass and optimization
+
             loss.backward()
+            if clip_gradients:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-            
-            # Collect predictions and labels for F1 score
-            train_preds.append(preds)
-            train_labels.append(labels)
-            
-            # Calculate training loss and accuracy
+
+            train_preds.append(preds.detach().cpu())
+            train_labels.append(labels.detach().cpu())
+
             train_loss += loss.item() * data.size(0)
             train_corrects += torch.sum(preds == labels.data).item()
-        
-        train_loss /= len(train_loader.dataset)
+
+        train_loss = train_loss / len(train_loader.dataset)
         train_acc = train_corrects / len(train_loader.dataset)
-        train_f1 = multiclass_f1_score(torch.cat(train_preds), torch.cat(train_labels), num_classes=model.num_classes, average='weighted')
-        
+        # concatenate safely on cpu tensors
+        train_preds_cat = torch.cat(train_preds)
+        train_labels_cat = torch.cat(train_labels)
+        train_f1 = multiclass_f1_score(train_preds_cat, train_labels_cat,
+                                       num_classes=model.num_classes, average='weighted')
+        # convert to float for printing/storage
+        train_f1_val = float(train_f1.item()) if hasattr(train_f1, 'item') else float(train_f1)
+
+        # Validation
         valid_loss = 0.0
         valid_corrects = 0
         val_preds = []
         val_labels = []
-        model.eval()  # Set model to evaluation mode
-        
+        model.eval()
+
         with torch.no_grad():
             for samples, labels in val_loader:
                 data, labels = samples['data'].to(device), labels.to(device)
-                
-                # Forward pass
                 outputs = model(data)
                 _, preds = torch.max(outputs, 1)
                 loss = criterion(outputs, labels)
-                
-                # Collect predictions and labels for F1 score
-                val_preds.append(preds)
-                val_labels.append(labels)
-                
-                # Calculate validation loss and accuracy
+
+                val_preds.append(preds.detach().cpu())
+                val_labels.append(labels.detach().cpu())
+
                 valid_loss += loss.item() * data.size(0)
                 valid_corrects += torch.sum(preds == labels.data).item()
-        
-        valid_loss /= len(val_loader.dataset)
+
+        valid_loss = valid_loss / len(val_loader.dataset)
         valid_acc = valid_corrects / len(val_loader.dataset)
-        val_f1 = multiclass_f1_score(torch.cat(val_preds), torch.cat(val_labels), num_classes=model.num_classes, average='weighted')
-        
-        print(f'Training Loss: {train_loss:.4f} Acc: {train_acc:.4f} F1: {train_f1:.4f}')
-        print(f'Validation Loss: {valid_loss:.4f} Acc: {valid_acc:.4f} F1: {val_f1:.4f}')
-        
+        val_preds_cat = torch.cat(val_preds)
+        val_labels_cat = torch.cat(val_labels)
+        val_f1 = multiclass_f1_score(val_preds_cat, val_labels_cat,
+                                     num_classes=model.num_classes, average='weighted')
+        val_f1_val = float(val_f1.item()) if hasattr(val_f1, 'item') else float(val_f1)
+
+        # Print stats
+        print(f'Training Loss: {train_loss:.4f} Acc: {train_acc:.4f} F1: {train_f1_val:.4f}')
+        print(f'Validation Loss: {valid_loss:.4f} Acc: {valid_acc:.4f} F1: {val_f1_val:.4f}')
+
+        # Save best model by validation loss
         if valid_loss < min_valid_loss:
             print(f'Validation Loss Decreased ({min_valid_loss:.6f} --> {valid_loss:.6f}) \t Saving The Model')
             min_valid_loss = valid_loss
-            torch.save(model.state_dict(), f"{MODELS_PATH}/{save_path}")
-        
+            torch.save(model.state_dict(), save_path)
+
+        # Record history
         history['train_loss'].append(train_loss)
         history['train_acc'].append(train_acc)
-        history['train_f1'].append(train_f1.item())
+        history['train_f1'].append(train_f1_val)
         history['val_loss'].append(valid_loss)
         history['val_acc'].append(valid_acc)
-        history['val_f1'].append(val_f1.item())
+        history['val_f1'].append(val_f1_val)
         history['epochs'].append(epoch + 1)
-        if early_stopping:
-            if early_stopping(valid_loss):
-                print(f"Early stopping at epoch {epoch+1}")
-                break
-        # Step the scheduler
-        scheduler.step()
+
+        # Scheduler step: handle ReduceLROnPlateau differently (it expects a metric),
+        # otherwise assume epoch-based scheduler.step()
+        if scheduler is not None:
+            if isinstance(scheduler, ReduceLROnPlateau):
+                scheduler.step(valid_loss)
+            else:
+                scheduler.step()
+
+        
+        # Early stopping check
+        early_stopping(valid_loss, model)
+        if early_stopping.early_stop:
+            print(f"Early stopping at epoch {epoch+1}")
+            break
+        # if early_stopping is not None:
+        #     if early_stopping(valid_loss):
+        #         print(f"Early stopping at epoch {epoch+1}")
+        #         break
+
+        
+        # log current learning rate (for first param_group)
+        current_lr = optimizer.param_groups[0].get('lr', None)
+        if current_lr is not None:
+            print(f'Learning rate after epoch {epoch+1}: {current_lr:.6g}')
 
     return model, history
+
+# def train_model(model, train_loader, val_loader, criterion, optimizer,scheduler,early_stopping, num_epochs=25, device="cpu", save_path='saved_model.pth',clip_gradients=False):
+#     """
+#     Train the model with the given data loaders, loss function, and optimizer.
+
+#     Parameters:
+#         model (nn.Module): The model to train.
+#         train_loader (DataLoader): DataLoader for training data.
+#         val_loader (DataLoader): DataLoader for validation data.
+#         criterion (nn.Module): Loss function.
+#         scheduler (torch.optim.lr_scheduler): Learning rate scheduler.
+#         optimizer (torch.optim.Optimizer): Optimizer.
+#         early_stopping (EarlyStopping): Early stopping object.
+#         num_epochs (int): Number of epochs to train the model.
+#         device (str): Device to use for training ('cpu' or 'cuda').
+#         save_path (str): Path to save the best model.
+#         clip_gradients (bool): Whether to apply gradient clipping.
+
+#     Returns:
+#         model (nn.Module): The trained model.
+#         dict: Dictionary containing training and validation loss, accuracy, and f1-score history.
+#     """
+#     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [], 'train_f1': [], 'val_f1': [], 'epochs': []}
+#     min_valid_loss = np.inf
+
+#     for epoch in range(num_epochs):
+#         print(f'Epoch {epoch+1}/{num_epochs}')
+#         train_loss = 0.0
+#         train_corrects = 0
+#         train_preds = []
+#         train_labels = []
+#         model.train()  # Set model to training mode
+        
+#         for samples, labels in train_loader:
+#             data, labels = samples["data"].to(device), labels.to(device)
+            
+#             # Clear the gradients
+#             optimizer.zero_grad()
+            
+#             # Forward pass
+#             outputs = model(data)
+#             _, preds = torch.max(outputs, 1)
+#             # print(outputs.shape, labels.shape)
+#             loss = criterion(outputs, labels)
+            
+#             # Backward pass and optimization
+#             loss.backward()
+#             if clip_gradients:
+#                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+#             optimizer.step()
+            
+#             # Collect predictions and labels for F1 score
+#             train_preds.append(preds)
+#             train_labels.append(labels)
+            
+#             # Calculate training loss and accuracy
+#             train_loss += loss.item() * data.size(0)
+#             train_corrects += torch.sum(preds == labels.data).item()
+        
+#         train_loss /= len(train_loader.dataset)
+#         train_acc = train_corrects / len(train_loader.dataset)
+#         train_f1 = multiclass_f1_score(torch.cat(train_preds), torch.cat(train_labels), num_classes=model.num_classes, average='weighted')
+        
+#         valid_loss = 0.0
+#         valid_corrects = 0
+#         val_preds = []
+#         val_labels = []
+#         model.eval()  # Set model to evaluation mode
+        
+#         with torch.no_grad():
+#             for samples, labels in val_loader:
+#                 data, labels = samples['data'].to(device), labels.to(device)
+                
+#                 # Forward pass
+#                 outputs = model(data)
+#                 _, preds = torch.max(outputs, 1)
+#                 loss = criterion(outputs, labels)
+                
+#                 # Collect predictions and labels for F1 score
+#                 val_preds.append(preds)
+#                 val_labels.append(labels)
+                
+#                 # Calculate validation loss and accuracy
+#                 valid_loss += loss.item() * data.size(0)
+#                 valid_corrects += torch.sum(preds == labels.data).item()
+        
+#         valid_loss /= len(val_loader.dataset)
+#         valid_acc = valid_corrects / len(val_loader.dataset)
+#         val_f1 = multiclass_f1_score(torch.cat(val_preds), torch.cat(val_labels), num_classes=model.num_classes, average='weighted')
+        
+#         print(f'Training Loss: {train_loss:.4f} Acc: {train_acc:.4f} F1: {train_f1:.4f}')
+#         print(f'Validation Loss: {valid_loss:.4f} Acc: {valid_acc:.4f} F1: {val_f1:.4f}')
+        
+#         if valid_loss < min_valid_loss:
+#             print(f'Validation Loss Decreased ({min_valid_loss:.6f} --> {valid_loss:.6f}) \t Saving The Model')
+#             min_valid_loss = valid_loss
+#             torch.save(model.state_dict(), f"{MODELS_PATH}/{save_path}")
+        
+#         history['train_loss'].append(train_loss)
+#         history['train_acc'].append(train_acc)
+#         history['train_f1'].append(train_f1.item())
+#         history['val_loss'].append(valid_loss)
+#         history['val_acc'].append(valid_acc)
+#         history['val_f1'].append(val_f1.item())
+#         history['epochs'].append(epoch + 1)
+#         if early_stopping:
+#             if early_stopping(valid_loss):
+#                 print(f"Early stopping at epoch {epoch+1}")
+#                 break
+#         # Step the scheduler
+#         scheduler.step()
+
+#     return model, history
 
 def test_model(model, test_loader, criterion, device="cpu"):
     test_loss = 0.0

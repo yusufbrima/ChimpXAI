@@ -23,10 +23,10 @@ torch.cuda.manual_seed_all(SEED)
 
 
 @click.command()
-@click.option('--experiment', default=103, type=int, help='Experiment number')
+@click.option('--experiment', default=200, type=int, help='Experiment number')
 @click.option('--target_class', default=DATA_SENTINEL, help='Target class for classification')
-@click.option('--n_trials', default=2, type=int, help='Number of Optuna trials')
-@click.option('--model_name', default='CustomCNNModel', help='Model architecture name (e.g. SmallResCNNv5, CustomCNNModel, ViTModel)')
+@click.option('--n_trials', default=1, type=int, help='Number of Optuna trials')
+@click.option('--model_name', default='SmallResCNNv5', help='Model architecture name (e.g. SmallResCNNv5, CustomCNNModel, ViTModel)')
 @click.option('--modelstr', default='resnet18', help='Model architecture to use if CustomCNNModel is selected')
 def main(experiment, target_class, n_trials, model_name, modelstr):
 

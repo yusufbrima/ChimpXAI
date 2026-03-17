@@ -106,11 +106,15 @@ def load_model(args):
         modelstr_save_name = args.modelstr
     elif args.model_name == 'ViTModel':
         modelstr_save_name = 'ViTModel'
+        if args.pretrained:
+            modelstr_save_name += '_pretrained'
     else:
         raise ValueError(f"Unknown model_name: {args.model_name}")
     
     if not args.ft:
+        # model_path = Path(f"{MODELS_PATH}/best_model_experiment_{args.modelstr}_{args.target_class}_{modelstr_save_name}_exp_{args.experiment}.pth")
         model_path = Path(f"{MODELS_PATH}/best_model_experiment_{args.modelstr}_{args.target_class}_{modelstr_save_name}_exp_{args.experiment}.pth")
+        print(f"Loading best model → {model_path}")
     else:
         Path(f"{MODELS_PATH}/finetuned_model_{args.modelstr}_{args.target_class}_{args.contrastive_method}_{modelstr_save_name}_exp_{args.experiment}.pth")
 
@@ -140,11 +144,19 @@ def load_model(args):
         else:
             raise ValueError(f"Unknown modelstr {args.modelstr}")
     elif args.model_name == "ViTModel":
-        model = ViTModel(model_name="vit_base_patch16_224", num_classes=num_classes, pretrained=False, in_chans=1).to(device)
+        if args.pretrained:
+            freeze_backbone = True
+            model =ViTModel(model_name='vit_tiny_patch16_224', num_classes=num_classes, pretrained=args.pretrained,freeze_backbone=freeze_backbone, in_chans=1).to(device) #vit_base_patch16_224 img_size=(input_shape[1], input_shape[2])
+        else:   
+            model = ViTModel(model_name="vit_tiny_patch16_224", num_classes=num_classes, pretrained=False, in_chans=1).to(device)
     else:
         raise ValueError(f"Unknown model_name {args.model_name}")
 
     model.load_state_dict(torch.load(model_path, map_location=device))
+    # Re-enable gradients for GradCAM — frozen params return None grads
+    for param in model.parameters():
+        param.requires_grad = True  
+
     model.eval()
     selector_idx = args.selector_idx
     # Select target layer
@@ -311,6 +323,7 @@ def main():
     parser.add_argument('--contrastive_method', type=str, default='supcon')
     parser.add_argument('--target_layers_string', type=str, default='', help="Comma-separated layer names for CAM")
     parser.add_argument('--selector_idx', type=int, default=0, help="Index to select target layer from candidates")
+    parser.add_argument('--pretrained', default=False, type=bool, help='Whether to use pretrained weights (only applicable for certain models)')
     args = parser.parse_args()
 
     args.ft = args.ft.lower() == 'true'
@@ -331,6 +344,8 @@ def main():
         modelstr_save_name = args.modelstr
     elif args.model_name == 'ViTModel':
         modelstr_save_name = f'ViTModel_{args.modelstr}'
+        if args.pretrained:
+            modelstr_save_name += '_pretrained'
     else:
         raise ValueError(f"Unknown model_name: {args.model_name}")
 

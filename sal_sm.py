@@ -10,10 +10,11 @@ from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from data.dataset import AugSpectrogramDataset
 from models.cnn import CustomCNNModel, ContrastiveCNN, FinetuningClassifier
 from models.vit import ViTModel, ContrastiveViT
+from models.cnn import SmallResCNNv5
 from config import EXPORT_DATA_PATH, RESULTS_PATH, MODELS_PATH, SAMPLING_RATE, FIG_PATH, DATA_SENTINEL
 from scipy.ndimage import zoom
 from pytorch_grad_cam import GradCAM, GradCAMPlusPlus, ScoreCAM, FinerCAM
-from saliency import extract_one_sample_per_class,load_model
+from saliency_sm import extract_one_sample_per_class,load_model
 
 # -----------------------------
 # DEVICE
@@ -169,8 +170,8 @@ def run_cam_methods_samplewise_with_waveform(model, data_npz, output_dir, target
 # -----------------------------
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--experiment', type=int, default=100)
-    parser.add_argument('--model_name', type=str, default='CustomCNNModel')
+    parser.add_argument('--experiment', type=int, default=200)
+    parser.add_argument('--model_name', type=str, default='SmallResCNNv5')
     parser.add_argument('--modelstr', type=str, default='resnet18')
     parser.add_argument('--target_class', type=str, default=DATA_SENTINEL)
     parser.add_argument('--ft', type=str, default='false', help="finetuned flag: true/false")
@@ -191,13 +192,7 @@ def main():
         extract_one_sample_per_class(test_dataset, sample_file)
 
     data_npz = np.load(sample_file, allow_pickle=True)
-
-    if args.model_name == 'CustomCNNModel':
-        modelstr_save_name = args.modelstr
-    elif args.model_name == 'ViTModel':
-        modelstr_save_name = f'ViTModel_{args.modelstr}'
-    else:
-        raise ValueError(f"Unknown model_name: {args.model_name}")
+    modelstr_save_name = "SmallResCNNv5"
 
     run_cam_methods_samplewise_with_waveform(
         model, data_npz, output_dir, target_layers, 

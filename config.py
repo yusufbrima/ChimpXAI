@@ -4,31 +4,33 @@ DATA_PATH = "/net/projects/data/Chimpanzee/UOS-Yusuf/Full_Data/good"
 
 FEMALE_DATA_PATH = "/net/projects/data/Chimpanzee/UOS-Yusuf/Full_Data/FEMALES"
 
-MODELS_PATH = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Models/ChimpSSL"
+MODELS_PATH = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Models/ChimpSSL"
 
-EXPORT_DATA_PATH = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/ChimpSSLResults"
+EXPORT_DATA_PATH = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/ChimpSSLResults"
 
 
 
-CHIMPANZEE_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/output_dataset"
-CHIMPANZEE_DATA_PATH_EXPORT = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/output_dataset_exported"    
+CHIMPANZEE_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/new_ph_clips_exported"
+# CHIMPANZEE_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/new_ph_clips"
+CHIMPANZEE_DATA_PATH_EXPORT = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/output_dataset_exported"    
 
 # src: https://github.com/earthspecies/library/tree/main/macaques
-MACAQUE_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/macaques"
-MACAQUE_DATA_PATH = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/Macaque_Output"
+MACAQUE_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/macaques"
+MACAQUE_DATA_PATH = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/Macaque_Output"
 
 
-ZIBRA_FINCH_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/zebra_finch_exported" #"/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/zebra_finch_cleaned"
-ZIBRA_FINCH_DATA_PATH_EXPORT = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/zebra_finch_exported_output"
+ZIBRA_FINCH_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/zebra_finch_exported" #"/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/zebra_finch_cleaned"
+ZIBRA_FINCH_DATA_PATH_EXPORT = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/zebra_finch_exported_output"
 
-FRUIT_BAT_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/egyptian_fruit_bats_exported" #"/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/egyptian_fruit_bats"
-FRUIT_BAT_DATA_PATH_EXPORT = "/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/egyptian_fruit_bats_exported_output"
+FRUIT_BAT_DATA_PATH_HUMAN_CLEAN = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/egyptian_fruit_bats_exported" #"/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/egyptian_fruit_bats"
+FRUIT_BAT_DATA_PATH_EXPORT = "/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/egyptian_fruit_bats_exported_output"
 
 
--00
 # find /net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/zebra_finch_exported/ -type f | wc -l
 
 # /net/projects/scratch/winter/valid_until_31_July_2026/ybrima/
+
+#rsync /net/projects/scratch/summer/valid_until_31_January_2026/ybrima/ to /net/projects/scratch/winter/valid_until_31_July_2026/ybrima/
 
 DATA_SENTINEL = "chimp" #either 'chimp' or 'macaque', or fruit_bat or zebra_finch
 INPUT_DATA_PATH = ""
@@ -67,3 +69,6 @@ SAMPLING_RATE = 44100
 LATENT_DIM = 256
 
 CLASS_WEIGHTS = [0.08961724, 0.07655283, 0.08961724, 0.09053404, 0.02406601,0.11666285, 0.09122164, 0.06761403, 0.03965162, 0.22209489,0.09236764]
+
+CHIMP_CLASSSES = ['ARN', 'CHE', 'CHI', 'FRE', 'GUM', 'LIT', 'LOU', 'NGO', 'ORI', 'PAN', 'THE']
+MACAQUE_CLASSES = ['AL', 'AM', 'AN', 'AY', 'BA', 'BE', 'BI', 'BO', 'BR', 'CL', 'DE']

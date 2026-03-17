@@ -8,8 +8,8 @@ input_folder = INPUT_DATA_PATH
 output_folder =  EXPORT_DATA_PATH
 
 
-# input_folder = '/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/new_ph_clips' #INPUT_DATA_PATH
-# output_folder = '/net/projects/scratch/summer/valid_until_31_January_2026/ybrima/Datasets/new_ph_clips_exported' #EXPORT_DATA_PATH
+# input_folder = '/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/new_ph_clips' #INPUT_DATA_PATH
+# output_folder = '/net/projects/scratch/winter/valid_until_31_July_2026/ybrima/Datasets/new_ph_clips_exported_advanced' #EXPORT_DATA_PATH
 
 
 # Remove output folder if it exists

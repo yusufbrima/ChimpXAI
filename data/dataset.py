@@ -256,24 +256,6 @@ class MAudioDataset(Dataset):
             start_time = i * self.duration
             self.file_list.append((file_path, class_idx, start_time))
             self.file_sample_rates.append(sr)
-    # def _add_file_segments(self, file_path, class_idx):
-    #     """
-    #     Add file segments to the file_list based on audio duration.
-
-    #     Parameters:
-    #         file_path (str): Path to the audio file.
-    #         class_idx (int): Class index for the audio file.
-    #     """
-    #     audio_metadata = torchaudio.info(file_path)
-
-    #     audio_length = audio_metadata.num_frames / audio_metadata.sample_rate
-    #     num_segments = math.ceil(audio_length / self.duration)
-        
-    #     for i in range(num_segments):
-    #         start_time = i * self.duration
-    #         self.file_list.append((file_path, class_idx, start_time))
-    #         self.file_sample_rates.append(audio_metadata.sample_rate)
-
     def get_class_name(self, class_idx):
         """
         Returns the class name corresponding to the given class index.
@@ -550,13 +532,13 @@ class AugAudioDataset(Dataset):
 
 class AugSpectrogramDataset(AugAudioDataset):
     """
-    Dataset subclass that returns log-scaled spectrograms instead of raw waveforms.
+    Dataset subclass that returns log-scaled spectrograms instead of raw waveforms
+    and optionally applies SpecAugment (time and frequency masking).
 
     Args:
-        n_fft (int): FFT window size.
-        hop_length (int): Hop length for STFT.
-        power (float): Power of the spectrogram (e.g., 2 for power, 1 for magnitude).
-        normalize (bool): Whether to normalize the spectrogram.
+        spec_augment (bool): Enable SpecAugment masking.
+        time_mask_param (int): Maximum width of time masks.
+        freq_mask_param (int): Maximum width of frequency masks.
     """
 
     def __init__(
@@ -568,24 +550,37 @@ class AugSpectrogramDataset(AugAudioDataset):
         hop_length: int = 256,
         power: float = 2.0,
         normalize: bool = True,
-        transform: Optional[callable] = None
+        transform: Optional[callable] = None,
+        spec_augment: bool = False,
+        time_mask_param: int = 20,
+        freq_mask_param: int = 10,
     ) -> None:
-        super().__init__(root_dir, duration,target_sample_rate, transform)
+
+        super().__init__(root_dir, duration, target_sample_rate, transform)
+
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.power = power
         self.normalize = normalize
-        # self.class_names = os.listdir(root_dir)
 
-        self.spectrogram = T.Spectrogram(n_fft=self.n_fft, hop_length=self.hop_length, power=self.power)
+        self.spec_augment = spec_augment
+
+        # Spectrogram transforms
+        self.spectrogram = T.Spectrogram(
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            power=self.power
+        )
+
         self.db_transform = T.AmplitudeToDB()
 
+        # SpecAugment transforms
+        if self.spec_augment:
+            self.time_mask = T.TimeMasking(time_mask_param=time_mask_param)
+            self.freq_mask = T.FrequencyMasking(freq_mask_param=freq_mask_param)
+
     def __getitem__(self, idx: int) -> Tuple[Dict[str, Tensor], int]:
-        """
-        Returns:
-            Dict with 'data' (log-scaled spectrogram), 'waveform', and 'sample_rate',
-            and the label index.
-        """
+
         sample, label_idx = super().__getitem__(idx)
         waveform = sample['data']
 
@@ -593,13 +588,37 @@ class AugSpectrogramDataset(AugAudioDataset):
         if waveform.size(0) > 1:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
 
-        # Convert waveform to log-spectrogram
+        # Convert waveform to spectrogram
         spectrogram = self.spectrogram(waveform)
+
+        # Convert to log scale
         log_spectrogram = self.db_transform(spectrogram)
 
         # Normalize spectrogram
         if self.normalize:
-            log_spectrogram = (log_spectrogram - log_spectrogram.mean()) / (log_spectrogram.std() + 1e-5)
+            log_spectrogram = (
+                log_spectrogram - log_spectrogram.mean()
+            ) / (log_spectrogram.std() + 1e-5)
+
+        # Apply SpecAugment
+        if self.spec_augment:
+            log_spectrogram = self.freq_mask(log_spectrogram)
+            log_spectrogram = self.time_mask(log_spectrogram)
+
+
+        # Probabilistic SpecAugment
+        # if self.spec_augment:
+        #     threshold = 0.5  # For example, 50% chance to apply masking
+        #     prob = torch.rand(1).item()  # random number between 0 and 1
+
+        #     if prob >= threshold:
+        #         # Apply masking
+        #         log_spectrogram = self.freq_mask(log_spectrogram)
+        #     threshold_time = 0.5  # Separate threshold for time masking
+        #     prob_time = torch.rand(1).item()
+        #     if prob_time >= threshold_time:
+        #         log_spectrogram = self.time_mask(log_spectrogram)
+
 
         return {
             'data': log_spectrogram,
@@ -607,6 +626,138 @@ class AugSpectrogramDataset(AugAudioDataset):
             'sample_rate': self.target_sample_rate
         }, label_idx
 
+# class AugSpectrogramDataset(AugAudioDataset):
+#     """
+#     Dataset subclass that returns log-scaled spectrograms instead of raw waveforms.
+
+#     Args:
+#         n_fft (int): FFT window size.
+#         hop_length (int): Hop length for STFT.
+#         power (float): Power of the spectrogram (e.g., 2 for power, 1 for magnitude).
+#         normalize (bool): Whether to normalize the spectrogram.
+#     """
+
+#     def __init__(
+#         self,
+#         root_dir: str,
+#         duration: float = 5.0,
+#         target_sample_rate: int = SAMPLING_RATE,
+#         n_fft: int = 512,
+#         hop_length: int = 256,
+#         power: float = 2.0,
+#         normalize: bool = True,
+#         transform: Optional[callable] = None
+#     ) -> None:
+#         super().__init__(root_dir, duration,target_sample_rate, transform)
+#         self.n_fft = n_fft
+#         self.hop_length = hop_length
+#         self.power = power
+#         self.normalize = normalize
+#         # self.class_names = os.listdir(root_dir)
+
+#         self.spectrogram = T.Spectrogram(n_fft=self.n_fft, hop_length=self.hop_length, power=self.power)
+#         self.db_transform = T.AmplitudeToDB()
+
+#     def __getitem__(self, idx: int) -> Tuple[Dict[str, Tensor], int]:
+#         """
+#         Returns:
+#             Dict with 'data' (log-scaled spectrogram), 'waveform', and 'sample_rate',
+#             and the label index.
+#         """
+#         sample, label_idx = super().__getitem__(idx)
+#         waveform = sample['data']
+
+#         # Convert to mono if stereo
+#         if waveform.size(0) > 1:
+#             waveform = torch.mean(waveform, dim=0, keepdim=True)
+
+#         # Convert waveform to log-spectrogram
+#         spectrogram = self.spectrogram(waveform)
+#         log_spectrogram = self.db_transform(spectrogram)
+
+#         # Normalize spectrogram
+#         if self.normalize:
+#             log_spectrogram = (log_spectrogram - log_spectrogram.mean()) / (log_spectrogram.std() + 1e-5)
+
+#         return {
+#             'data': log_spectrogram,
+#             'waveform': waveform,
+#             'sample_rate': self.target_sample_rate
+#         }, label_idx
+
+
+
+class SingleAudioSpectrogramDataset(torch.utils.data.Dataset):
+    """
+    Dataset for a single audio file that mirrors AugSpectrogramDataset,
+    but without segmentation. Returns waveform, log-spectrogram, sample rate, and label.
+    """
+
+    def __init__(
+        self,
+        file_path: str,
+        root_dir: str,
+        label: int,
+        target_sample_rate: int = 44100,
+        n_fft: int = 512,
+        hop_length: int = 256,
+        power: float = 2.0,
+        normalize: bool = True,
+        transform: Optional[callable] = None
+    ):
+        self.file_path = file_path
+        self.label = label
+        self.target_sample_rate = target_sample_rate
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.power = power
+        self.normalize = normalize
+        self.transform = transform
+
+        # Collect classes and map to integer labels
+        self.classes = sorted([
+            d for d in os.listdir(root_dir)
+            if os.path.isdir(os.path.join(root_dir, d))
+        ])
+        self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
+
+
+        # Load full audio
+        y, sr = librosa.load(file_path, sr=None, mono=True)
+        # Resample if needed
+        if sr != target_sample_rate:
+            y = librosa.resample(y, orig_sr=sr, target_sr=target_sample_rate)
+            sr = target_sample_rate
+        self.waveform = torch.tensor(y, dtype=torch.float32).unsqueeze(0)  # [1, n_samples]
+        self.sample_rate = sr
+
+        # Spectrogram transform
+        self.spectrogram = T.Spectrogram(n_fft=self.n_fft, hop_length=self.hop_length, power=self.power)
+        self.db_transform = T.AmplitudeToDB()
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, idx: int) -> Tuple[Dict[str, Tensor], int]:
+        waveform = self.waveform.clone()
+
+        # Apply optional waveform transform
+        if self.transform:
+            waveform = self.transform(waveform)
+
+        # Compute spectrogram
+        spect = self.spectrogram(waveform)
+        log_spect = self.db_transform(spect)
+
+        # Normalize if required
+        if self.normalize:
+            log_spect = (log_spect - log_spect.mean()) / (log_spect.std() + 1e-5)
+
+        return {
+            'data': log_spect,
+            'waveform': waveform,
+            'sample_rate': self.sample_rate
+        }, self.label
 
 
 

@@ -177,6 +177,7 @@ def main():
     parser.add_argument('--contrastive_method', type=str, default='supcon')
     parser.add_argument('--target_layers_string', type=str, default='', help="Comma-separated layer names for CAM")
     parser.add_argument('--selector_idx', type=int, default=0, help="Index to select target layer from candidates")
+    parser.add_argument('--pretrained', default=False, type=bool, help='Whether to use pretrained weights (only applicable for certain models)')
 
     args = parser.parse_args()
 
@@ -196,6 +197,8 @@ def main():
         modelstr_save_name = args.modelstr
     elif args.model_name == 'ViTModel':
         modelstr_save_name = f'ViTModel_{args.modelstr}'
+        if args.pretrained:
+            modelstr_save_name += '_pretrained'
     else:
         raise ValueError(f"Unknown model_name: {args.model_name}")
 

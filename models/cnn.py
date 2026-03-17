@@ -4,7 +4,7 @@ import torchvision.models as models
 import torch.nn.functional as F
 import torchaudio
 from config import LATENT_DIM
-
+from torchvision.models.resnet import ResNet, BasicBlock
 
 
 class ResidualBlock(nn.Module):
@@ -143,155 +143,193 @@ class SmallCNNModel(nn.Module):
 
         return x
 
-
-
-# class SmallCNNModel(nn.Module):
-#     def __init__(self, num_classes, modelstr='smallcnn', input_height=257, input_width=345):
-#         """
-#         A lightweight CNN designed for small datasets
-        
-#         Parameters:
-#             num_classes (int): Number of output classes
-#             modelsrt (str): The type of model to use ('smallcnn')
-#         """
-#         super(SmallCNNModel, self).__init__()
-        
-#         self.num_classes = num_classes
-        
-#         # First convolutional block
-#         self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
-#         self.bn1 = nn.BatchNorm2d(32)
-        
-#         # Second convolutional block
-#         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-#         self.bn2 = nn.BatchNorm2d(64)
-        
-#         # Third convolutional block
-#         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-#         self.bn3 = nn.BatchNorm2d(128)
-        
-#         # Pooling layers
-#         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        
-#         # Dropout for regularization
-#         self.dropout = nn.Dropout(0.25)
-        
-#         # Fully connected layers
-#         # This will need to be adjusted based on your input spectrogram size
-#         self.fc1 = nn.Linear(128 * (input_height//8) * (input_width//8), 256)
-
-#         self.fc2 = nn.Linear(256, num_classes)
-
-#     def forward(self, x):
-#         """
-#         Forward pass of the network
-        
-#         Parameters:
-#             x (torch.Tensor): Input tensor (batch_size, 1, height, width)
-        
-#         Returns:
-#             torch.Tensor: Output logits
-#         """
-#         # print("Shape of input tensor:", x.shape)
-#         # First conv block
-#         x = self.pool(F.relu(self.bn1(self.conv1(x))))
-        
-#         # Second conv block
-#         x = self.pool(F.relu(self.bn2(self.conv2(x))))
-        
-#         # Third conv block
-#         x = self.pool(F.relu(self.bn3(self.conv3(x))))
-        
-#         # Flatten
-#         x = x.view(x.size(0), -1)
-        
-#         # Fully connected layers with dropout
-#         x = F.relu(self.fc1(x))
-#         x = self.fc2(x)
-        
-#         return x
-
 class CustomCNNModel(nn.Module):
     """
     A customized CNN model that accepts a single input channel and outputs a specified number of classes.
-
-    Attributes:
-        base_model (nn.Module): The base CNN model with modifications.
+    Supports resnet18 and densenet121 with optional pretrained weights.
+    Input is resized and repeated to match pretrained model expectations in the forward pass.
     """
-    
-    def __init__(self, num_classes, weights=None, modelstr='resnet18'):
-        """
-        Initializes the custom model with a single input channel and a custom number of output classes.
 
-        Parameters:
-            num_classes (int): The number of output classes for the final classification layer.
-            weights (str, optional): The type of pre-trained weights to use (e.g., 'IMAGENET1K_V1').
-        """
+    def __init__(self, num_classes, weights=None, modelstr='resnet18', dropout_p=0.5):
         super(CustomCNNModel, self).__init__()
 
         self.num_classes = num_classes
-        
-        # Load the ResNet-18 model, optionally with pre-trained weights
+        self.modelstr = modelstr
+
         if modelstr == 'resnet18':
-            self.base_model = models.resnet18(weights=weights)
-            # Modify the first convolutional layer to accept 1 channel instead of 3
-            self.base_model.conv1 = nn.Conv2d(1, self.base_model.conv1.out_channels,
-                                          kernel_size=self.base_model.conv1.kernel_size,
-                                          stride=self.base_model.conv1.stride,
-                                          padding=self.base_model.conv1.padding,
-                                          bias=False)
-        
-            # Modify the final fully connected layer to output the specified number of classes
-            self.base_model.fc = nn.Linear(self.base_model.fc.in_features, num_classes)
-        elif modelstr == 'resnet34':
-            self.base_model = models.resnet34(weights=weights)
-            # Modify the first convolutional layer to accept 1 channel instead of 3
-            self.base_model.conv1 = nn.Conv2d(1, self.base_model.conv1.out_channels,
-                                          kernel_size=self.base_model.conv1.kernel_size,
-                                          stride=self.base_model.conv1.stride,
-                                          padding=self.base_model.conv1.padding,
-                                          bias=False)
-        
-            # Modify the final fully connected layer to output the specified number of classes
-            self.base_model.fc = nn.Linear(self.base_model.fc.in_features, num_classes)
-        elif modelstr == 'resnet50':
-            self.base_model = models.resnet50(weights=weights)
-            # Modify the first convolutional layer to accept 1 channel instead of 3
-            self.base_model.conv1 = nn.Conv2d(1, self.base_model.conv1.out_channels,
-                                          kernel_size=self.base_model.conv1.kernel_size,
-                                          stride=self.base_model.conv1.stride,
-                                          padding=self.base_model.conv1.padding,
-                                          bias=False)
-        
-            # Modify the final fully connected layer to output the specified number of classes
-            self.base_model.fc = nn.Linear(self.base_model.fc.in_features, num_classes)
+            self.base_model = models.resnet18(
+                weights=models.ResNet18_Weights.IMAGENET1K_V1 if weights else None
+            )
+
+            # Freeze everything except layer4 and fc
+            for name, param in self.base_model.named_parameters():
+                param.requires_grad = any(x in name for x in ['layer4', 'fc'])
+
+            in_features = self.base_model.fc.in_features
+            self.base_model.fc = nn.Sequential(
+                nn.LayerNorm(in_features),
+                nn.Dropout(p=dropout_p),
+                nn.Linear(in_features, 256),
+                nn.ReLU(),
+                nn.Dropout(p=dropout_p),
+                nn.Linear(256, num_classes)
+            )
+
         elif modelstr == 'dense121':
-            self.base_model = models.densenet121(weights=weights)
-            # Modify the first convolutional layer to accept 1 channel instead of 3
-            self.base_model.features.conv0 = nn.Conv2d(1, self.base_model.features.conv0.out_channels,
-                                          kernel_size=self.base_model.features.conv0.kernel_size,
-                                          stride=self.base_model.features.conv0.stride,
-                                          padding=self.base_model.features.conv0.padding,
-                                          bias=False)
-            # Modify the final fully connected layer to output the specified number of classes
-            self.base_model.classifier = nn.Linear(self.base_model.classifier.in_features, num_classes)
+            self.base_model = models.densenet121(
+                weights=models.DenseNet121_Weights.IMAGENET1K_V1 if weights else None
+            )
+
+            # Freeze everything except denseblock4, norm5, and classifier
+            for name, param in self.base_model.named_parameters():
+                param.requires_grad = any(x in name for x in ['denseblock4', 'norm5', 'classifier'])
+
+            in_features = self.base_model.classifier.in_features
+            self.base_model.classifier = nn.Sequential(
+                nn.LayerNorm(in_features),
+                nn.Dropout(p=dropout_p),
+                nn.Linear(in_features, 256),
+                nn.ReLU(),
+                nn.Dropout(p=dropout_p),
+                nn.Linear(256, num_classes)
+            )
+
         else:
-            self.base_model = models.efficientnet_b0(weights=weights)
-            self.base_model.features[0][0]  = torch.nn.Conv2d(1, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
-    
-            self.base_model.classifier = torch.nn.Linear(in_features=1280, out_features=num_classes, bias=True)    
+            raise ValueError(f"Unsupported modelstr '{modelstr}'. Choose 'resnet18' or 'dense121'.")
 
     def forward(self, x):
-        """
-        Defines the forward pass of the model.
-
-        Parameters:
-            x (torch.Tensor): The input tensor.
-
-        Returns:
-            torch.Tensor: The output of the model.
-        """
+        # [B, 1, 257, 173] → [B, 3, 224, 224] to match pretrained model expectations
+        x = x.repeat(1, 3, 1, 1)                               # 1 channel → 3 channels
+        x = nn.functional.interpolate(                          # resize to 224×224
+            x, size=(224, 224),
+            mode='bilinear',
+            align_corners=False
+        )
         return self.base_model(x)
+
+
+# class CustomCNNModel(nn.Module):
+#     """
+#     A customized CNN model that accepts a single input channel and outputs a specified number of classes.
+
+#     Attributes:
+#         base_model (nn.Module): The base CNN model with modifications.
+#     """
+    
+#     def __init__(self, num_classes, weights=None, modelstr='resnet18', dropout_p=0.5):
+#         """
+#         Initializes the custom model with a single input channel and a custom number of output classes.
+
+#         Parameters:
+#             num_classes (int): The number of output classes for the final classification layer.
+#             weights (str, optional): The type of pre-trained weights to use (e.g., 'IMAGENET1K_V1').
+#             modelstr (str): The model architecture to use.
+#             dropout_p (float): Dropout probability applied before the final classification layer.
+#         """
+#         super(CustomCNNModel, self).__init__()
+
+#         self.num_classes = num_classes
+        
+#         if modelstr == 'resnet18':
+#             self.base_model = models.resnet18(weights=weights)
+#             self.base_model.conv1 = nn.Conv2d(1, self.base_model.conv1.out_channels,
+#                                           kernel_size=self.base_model.conv1.kernel_size,
+#                                           stride=1,
+#                                           padding=self.base_model.conv1.padding,
+#                                           bias=False)
+#             # Freeze layer1 and layer2 — reduces trainable params from 11M to ~6M
+
+#             # for name, param in self.base_model.named_parameters():
+#             #     if 'conv1' in name or 'layer1' in name or 'layer2' in name:
+#             #         param.requires_grad = False
+#             for name, param in self.base_model.named_parameters():
+#                 if 'layer1' in name or 'layer2' in name:
+#                     param.requires_grad = True
+#             # self.base_model.maxpool = nn.Identity()
+
+#             # self.base_model.fc = nn.Sequential(
+#             #     nn.BatchNorm1d(self.base_model.fc.in_features),
+#             #     nn.Dropout(p=dropout_p),
+#             #     nn.Linear(self.base_model.fc.in_features, 256),
+#             #     nn.ReLU(),
+#             #     nn.Dropout(p=dropout_p),
+#             #     nn.Linear(256, num_classes)
+#             # )
+#             self.base_model.fc = nn.Sequential(
+#                 # nn.BatchNorm1d(self.base_model.fc.in_features),
+#                 nn.Dropout(p=dropout_p),
+#                 nn.Linear(self.base_model.fc.in_features, num_classes)
+#             )
+#         elif modelstr == 'resnet10':
+#             print("Using custom ResNet-10 architecture")
+#             self.base_model = ResNet(BasicBlock, [1, 1, 1, 1])
+#             # Single channel input
+#             self.base_model.conv1 = nn.Conv2d(1, 64,
+#                                             kernel_size=7,
+#                                             stride=2,
+#                                             padding=3,
+#                                             bias=False)
+#             # Dropout head
+#             self.base_model.fc = nn.Sequential(
+#                 nn.Dropout(p=dropout_p),
+#                 nn.Linear(self.base_model.fc.in_features, num_classes)
+#     )
+#         elif modelstr == 'resnet34':
+#             self.base_model = models.resnet34(weights=weights)
+#             self.base_model.conv1 = nn.Conv2d(1, self.base_model.conv1.out_channels,
+#                                           kernel_size=self.base_model.conv1.kernel_size,
+#                                           stride=self.base_model.conv1.stride,
+#                                           padding=self.base_model.conv1.padding,
+#                                           bias=False)
+#             self.base_model.fc = nn.Sequential(
+#                 nn.Dropout(p=dropout_p),
+#                 nn.Linear(self.base_model.fc.in_features, num_classes)
+#             )
+
+#         elif modelstr == 'resnet50':
+#             self.base_model = models.resnet50(weights=weights)
+#             self.base_model.conv1 = nn.Conv2d(1, self.base_model.conv1.out_channels,
+#                                           kernel_size=self.base_model.conv1.kernel_size,
+#                                           stride=self.base_model.conv1.stride,
+#                                           padding=self.base_model.conv1.padding,
+#                                           bias=False)
+#             self.base_model.fc = nn.Sequential(
+#                 nn.Dropout(p=dropout_p),
+#                 nn.Linear(self.base_model.fc.in_features, num_classes)
+#             )
+
+#         elif modelstr == 'dense121':
+#             self.base_model = models.densenet121(weights=weights)
+#             self.base_model.features.conv0 = nn.Conv2d(1, self.base_model.features.conv0.out_channels,
+#                                           kernel_size=self.base_model.features.conv0.kernel_size,
+#                                           stride=self.base_model.features.conv0.stride,
+#                                           padding=self.base_model.features.conv0.padding,
+#                                           bias=False)
+#             self.base_model.classifier = nn.Sequential(
+#                 nn.Dropout(p=dropout_p),
+#                 nn.Linear(self.base_model.classifier.in_features, num_classes)
+#             )
+
+#         else:  # efficientnet_b0
+#             self.base_model = models.efficientnet_b0(weights=weights)
+#             self.base_model.features[0][0] = nn.Conv2d(1, 32, kernel_size=(3, 3), 
+#                                                         stride=(2, 2), padding=(1, 1), bias=False)
+#             self.base_model.classifier = nn.Sequential(
+#                 nn.Dropout(p=dropout_p),
+#                 nn.Linear(1280, num_classes)
+#             )
+
+#     def forward(self, x):
+#         """
+#         Defines the forward pass of the model.
+
+#         Parameters:
+#             x (torch.Tensor): The input tensor.
+
+#         Returns:
+#             torch.Tensor: The output of the model.
+#         """
+#         return self.base_model(x)
 
 class ContrastiveCNN(nn.Module):
     """

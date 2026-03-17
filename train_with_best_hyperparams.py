@@ -18,21 +18,23 @@ from config import (
     FT_EPOCHS,
     DATA_SENTINEL
 )
-from utils import train_model, test_model, EarlyStopping, compute_class_weights
+from utils import train_model, test_model, compute_class_weights #EarlyStopping
+from early_stopping_pytorch import EarlyStopping
 import click
 import json
 
 
 # --- Device setup ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+# device = torch.device("cuda:1" if torch.cuda.device_count() > 1 else "cuda:0")
 
 @click.command()
 @click.option('--experiment', default=200, type=int, help='Experiment number (matches the Optuna experiment)')
 @click.option('--target_class', default=DATA_SENTINEL, help='Target class for classification')
-@click.option('--model_name', default='CustomCNNModel', help='Model architecture name (e.g. SmallResCNNv5, CustomCNNModel, ViTModel)')
+@click.option('--model_name', default='ViTModel', help='Model architecture name (e.g. SmallResCNNv5, CustomCNNModel, ViTModel)')
 @click.option('--modelstr', default='resnet18', help='Model architecture to use if CustomCNNModel is selected')
-def main(experiment, target_class, model_name, modelstr):
+@click.option('--pretrained', default=False, type=bool, help='Whether to use pretrained weights (only applicable for certain models)')
+def main(experiment, target_class, model_name, modelstr, pretrained):
 
     # --- Load best hyperparameters from JSON ---
     # best_params_path = Path(f"{RESULTS_PATH}/best_hyperparams_experiment_{experiment}.json")
@@ -42,6 +44,8 @@ def main(experiment, target_class, model_name, modelstr):
         modelstr_save_name = 'SmallResCNNv5'
     elif model_name == 'ViTModel':
         modelstr_save_name = 'ViTModel'
+        if pretrained:
+            modelstr_save_name += '_pretrained'
     else:
         raise ValueError(f"Unknown model_name: {model_name}")
     best_params_path = Path(f'{RESULTS_PATH}/best_hyperparams_experiment_{modelstr_save_name}_{experiment}_{target_class}.json')
@@ -77,7 +81,9 @@ def main(experiment, target_class, model_name, modelstr):
         target_sample_rate=SAMPLING_RATE,
         transform=augment,
         n_fft=n_fft,
-        hop_length=hop_length
+        hop_length=hop_length,
+        spec_augment=True,
+        freq_mask_param=10,
     )
 
     val_dataset = AugSpectrogramDataset(
@@ -97,6 +103,9 @@ def main(experiment, target_class, model_name, modelstr):
     )
 
     # DataLoaders
+
+    # batch_size = 32 #or 64  # increases gradient stability
+    lr = 0.0001  # lower learning rate for fine-tuning
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
@@ -104,33 +113,58 @@ def main(experiment, target_class, model_name, modelstr):
     # --- Class weights ---
     train_labels = [train_ds[i][1] for i in range(len(train_ds))]
     class_weights_eff = compute_class_weights(train_labels, method='effective', beta=0.99, device=device)
-    criterion = nn.CrossEntropyLoss(weight=class_weights_eff)
+    criterion = nn.CrossEntropyLoss(weight=class_weights_eff,label_smoothing=0.2) # 
 
     # --- Model setup ---
     num_classes = len(train_ds.classes)
+
+    # print the classes as list 
+    print(f"\nClasses: {train_ds.classes}")
     
     sample, label = next(iter(train_loader))
 
     input_shape = sample['data'].shape[1:]  
 
     # num_classes = len(train_dataset.classes)
+    print(f"\nInput shape: {input_shape}, Num classes: {num_classes}")
 
     if model_name == "CustomCNNModel":
         model = CustomCNNModel(num_classes=num_classes, weights=None, modelstr=modelstr).to(device)
     elif model_name == "ViTModel":
-        model =ViTModel(model_name='vit_base_patch16_224', num_classes=num_classes, pretrained=False, in_chans=1).to(device)
+        if pretrained:
+            freeze_backbone = True
+            model =ViTModel(model_name='vit_tiny_patch16_224', num_classes=num_classes, pretrained=pretrained,freeze_backbone=freeze_backbone, in_chans=1).to(device) #vit_base_patch16_224 img_size=(input_shape[1], input_shape[2])
+        else:
+            model =ViTModel(model_name='vit_tiny_patch16_224', num_classes=num_classes, in_chans=1,pretrained=True,freeze_backbone=True).to(device) #vit_base_patch16_224 img_size=(input_shape[1], input_shape[2])
     else:
         model = SmallResCNNv5(num_classes=num_classes, base_channels=base_channels, dropout_p=dropout_p).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
-    early_stopping = EarlyStopping(patience=5, min_delta=0.01)
+    # optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=3e-4) #weight_decay=. 1e-4
+
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-3)
+
+
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=FT_EPOCHS, eta_min=1e-6)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='min', 
+        factor=0.5, 
+        patience=5,
+    )
+    # cooldown=2,
+    # early_stopping = EarlyStopping(patience=5, min_delta=0.001)
+    early_stopping = EarlyStopping(patience=10, verbose=True)
+
+    # early_stopping = EarlyStopping(patience=7, min_delta=0.001)  # relax constraints
+
+    FT_EPOCHS = 300
 
     # --- Dataset sizes ---
     print(f"\nDataset sizes:")
     print(f"  Train: {len(train_ds)}")
     print(f"  Validation: {len(val_dataset)}")
-    print(f"  Test: {len(test_dataset)}")
+    print(f"  Test: {len(test_dataset)}") # conda activate chimpxai_legacy
 
     # --- Training ---
     print("\nStarting training with best hyperparameters...")
@@ -144,22 +178,24 @@ def main(experiment, target_class, model_name, modelstr):
         early_stopping,
         num_epochs=FT_EPOCHS,
         device=device,
-        save_path=f"best_model_experiment_{experiment}.pth"
+        save_path=f"best_model_experiment_{experiment}.pth",
+        clip_gradients=True
     )
 
     # Save trained model
-    torch.save(model.state_dict(), f"{MODELS_PATH}/best_model_experiment_{experiment}.pth")
+    # torch.save(model.state_dict(), f"{MODELS_PATH}/best_model_experiment_{experiment}.pth")
 
     # --- Evaluation ---
     test_loss, test_acc, test_f1, all_labels, all_preds = test_model(model, test_loader, criterion, device=device)
     print(f"\nTest Results - Loss: {test_loss:.4f}, Acc: {test_acc:.4f}, F1: {test_f1:.4f}")
 
     model_path = Path(f"{MODELS_PATH}/best_model_experiment_{modelstr}_{target_class}_{modelstr_save_name}_exp_{experiment}.pth")
-    if model_path.parent.exists():
-        experiment_id = str(model_path).split('_')[-1].split('.')[0]
-        # experiment = int(experiment_id) + 1
-        model_path = Path(f"{MODELS_PATH}/best_model_experiment_{modelstr}_{target_class}_{modelstr_save_name}_exp_{experiment}.pth")
+    # if model_path.parent.exists():
+    #     experiment_id = str(model_path).split('_')[-1].split('.')[0]
+    #     # experiment = int(experiment_id) + 1
+    model_path = Path(f"{MODELS_PATH}/best_model_experiment_{modelstr}_{target_class}_{modelstr_save_name}_exp_{experiment}.pth")
 
+    print(f"Saving best model → {model_path}")
     torch.save(model.state_dict(), model_path)
 
     # --- Save outputs ---
@@ -194,7 +230,7 @@ def main(experiment, target_class, model_name, modelstr):
     plt.legend()
     plt.tight_layout()
     # plt.grid()
-    plt.savefig(f'./results/figures/training_validation_history_{DATA_SENTINEL}.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'./results/figures/training_validation_history_{DATA_SENTINEL}_{modelstr_save_name}_{target_class}_{experiment}.png', dpi=300, bbox_inches='tight')
     plt.close()
 
 if __name__ == "__main__":

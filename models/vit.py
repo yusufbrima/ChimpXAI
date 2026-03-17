@@ -3,6 +3,72 @@ import torch.nn as nn
 import torch.nn.functional as F
 import timm
 
+
+# class ViTModel(nn.Module):
+#     def __init__(self,
+#                  model_name: str = 'vit_base_patch16_224',
+#                  num_classes: int = 10,
+#                  pretrained: bool = True,
+#                  freeze_backbone: bool = False,
+#                  in_chans: int = 1,
+#                  img_size: tuple = None):
+#         super().__init__()
+
+#         self.model_name = model_name
+#         self.num_classes = num_classes
+#         self.patch_size = int(model_name.split('patch')[-1].split('_')[0])  # extract from name e.g. 16
+
+#         if not pretrained and img_size is not None:
+#             # Pad img_size up to nearest multiple of patch_size
+#             padded_h = self._pad_to_multiple(img_size[0], self.patch_size)
+#             padded_w = self._pad_to_multiple(img_size[1], self.patch_size)
+#             self.expected_h, self.expected_w = padded_h, padded_w
+
+#             self.model = timm.create_model(
+#                 model_name,
+#                 pretrained=False,
+#                 num_classes=num_classes,
+#                 in_chans=in_chans,
+#                 img_size=(padded_h, padded_w)
+#             )
+#         else:
+#             self.model = timm.create_model(
+#                 model_name,
+#                 pretrained=pretrained,
+#                 num_classes=num_classes,
+#                 in_chans=in_chans
+#             )
+#             default_cfg = getattr(self.model, "default_cfg", {})
+#             input_size = default_cfg.get("input_size", (3, 224, 224))
+#             self.expected_h, self.expected_w = input_size[1], input_size[2]
+
+#         if freeze_backbone:
+#             for name, param in self.model.named_parameters():
+#                 if "head" not in name and "fc" not in name:
+#                     param.requires_grad = False
+
+#     @staticmethod
+#     def _pad_to_multiple(size, multiple):
+#         remainder = size % multiple
+#         if remainder == 0:
+#             return size
+#         return size + (multiple - remainder)
+
+#     def maybe_pad(self, x):
+#         """Pad input to expected size with reflection padding (preserves spectrogram structure)."""
+#         h, w = x.shape[2], x.shape[3]
+#         pad_h = self.expected_h - h
+#         pad_w = self.expected_w - w
+#         if pad_h > 0 or pad_w > 0:
+#             # F.pad format: (left, right, top, bottom)
+#             x = F.pad(x, (0, pad_w, 0, pad_h), mode='reflect')
+#         return x
+
+#     def forward(self, x):
+#         x = self.maybe_pad(x)
+#         return self.model(x)
+
+
 class ViTModel(nn.Module):
     """
     Vision Transformer (ViT) model for spectrogram classification or fine-tuning.
